@@ -2,9 +2,8 @@
 Credit to Derek Thomas, derek@huggingface.co
 """
 
-import subprocess
-
-subprocess.run(["pip", "install", "--upgrade", "transformers[torch,sentencepiece]==4.34.1"])
+# import subprocess
+# subprocess.run(["pip", "install", "--upgrade", "transformers[torch,sentencepiece]==4.34.1"])
 
 import logging
 from pathlib import Path
@@ -14,7 +13,7 @@ import gradio as gr
 from jinja2 import Environment, FileSystemLoader
 
 from backend.query_llm import generate_hf, generate_openai
-from backend.semantic_search import table, retriever
+# from backend.semantic_search import table, retriever
 
 VECTOR_COLUMN_NAME = ""
 TEXT_COLUMN_NAME = ""
