@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 
-DIR_TO_SCRAPE = "transformers/docs/source/en/"
+DIR_TO_SCRAPE = "data/transformers/docs/source/en/"
 OUTPUT_DIR = str(Path().resolve() / "docs_dump")
 
 
