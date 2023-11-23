@@ -7,19 +7,16 @@ from typing import Any, Dict, Generator, List
 from huggingface_hub import InferenceClient
 from transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
+from settings import *
 
-temperature = 0.9
-top_p = 0.6
-repetition_penalty = 1.2
+
+tokenizer = AutoTokenizer.from_pretrained(LLM_NAME)
 
 OPENAI_KEY = getenv("OPENAI_API_KEY")
 HF_TOKEN = getenv("HUGGING_FACE_HUB_TOKEN")
 
-hf_client = InferenceClient(
-        "mistralai/Mistral-7B-Instruct-v0.1",
-        token=HF_TOKEN
-        )
+
+hf_client = InferenceClient(LLM_NAME, token=HF_TOKEN)
 
 
 def format_prompt(message: str, api_kind: str):
@@ -40,12 +37,12 @@ def format_prompt(message: str, api_kind: str):
         return messages
     elif api_kind == "hf":
         return tokenizer.apply_chat_template(messages, tokenize=False)
-    elif api_kind:
+    else:
         raise ValueError("API is not supported")
 
 
-def generate_hf(prompt: str, history: str, temperature: float = 0.9, max_new_tokens: int = 256,
-             top_p: float = 0.95, repetition_penalty: float = 1.0) -> Generator[str, None, str]:
+def generate_hf(prompt: str, history: str, temperature: float = 0.9, max_new_tokens: int = 512,
+             top_p: float = 0.6, repetition_penalty: float = 1.2) -> Generator[str, None, str]:
     """
     Generate a sequence of tokens based on a given prompt and history using Mistral client.
 
@@ -99,8 +96,8 @@ def generate_hf(prompt: str, history: str, temperature: float = 0.9, max_new_tok
             return "I do not know what happened, but I couldn't understand you."
 
 
-def generate_openai(prompt: str, history: str, temperature: float = 0.9, max_new_tokens: int = 256,
-             top_p: float = 0.95, repetition_penalty: float = 1.0) -> Generator[str, None, str]:
+def generate_openai(prompt: str, history: str, temperature: float = 0.9, max_new_tokens: int = 512,
+             top_p: float = 0.6, repetition_penalty: float = 1.2) -> Generator[str, None, str]:
     """
     Generate a sequence of tokens based on a given prompt and history using Mistral client.
 

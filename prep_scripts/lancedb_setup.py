@@ -1,3 +1,6 @@
+import shutil
+import traceback
+
 import lancedb
 import torch
 import pyarrow as pa
@@ -8,13 +11,16 @@ import numpy as np
 
 from sentence_transformers import SentenceTransformer
 
+from settings import *
 
-EMB_MODEL_NAME = ""
-DB_TABLE_NAME = ""
-VECTOR_COLUMN_NAME = ""
-TEXT_COLUMN_NAME = ""
-INPUT_DIR = "<chunked docs directory>"
-db = lancedb.connect(".lancedb") # db location
+
+emb_sizes = {
+    "sentence-transformers/all-MiniLM-L6-v2": 384,
+    "thenlper/gte-large": 0
+}
+
+shutil.rmtree(LANCEDB_DIRECTORY, ignore_errors=True)
+db = lancedb.connect(LANCEDB_DIRECTORY)
 batch_size = 32
 
 model = SentenceTransformer(EMB_MODEL_NAME)
@@ -29,17 +35,17 @@ else:
 
 schema = pa.schema(
   [
-      pa.field(VECTOR_COLUMN_NAME, pa.list_(pa.float32(), 768)),
+      pa.field(VECTOR_COLUMN_NAME, pa.list_(pa.float32(), emb_sizes[EMB_MODEL_NAME])),
       pa.field(TEXT_COLUMN_NAME, pa.string())
   ])
-tbl = db.create_table(DB_TABLE_NAME, schema=schema, mode="overwrite")
+tbl = db.create_table(LANCEDB_TABLE_NAME, schema=schema, mode="overwrite")
 
-input_dir = Path(INPUT_DIR)
+input_dir = Path(TEXT_CHUNKS_DIR)
 files = list(input_dir.rglob("*"))
 
 sentences = []
 for file in files:
-    with open(file) as f:
+    with open(file, encoding='utf-8') as f:
         sentences.append(f.read())
 
 for i in tqdm.tqdm(range(0, int(np.ceil(len(sentences) / batch_size)))):
@@ -54,12 +60,15 @@ for i in tqdm.tqdm(range(0, int(np.ceil(len(sentences) / batch_size)))):
         })
 
         tbl.add(df)
+
     except:
-        print(f"batch {i} was skipped")
+        print(f"batch {i} was skipped: {traceback.format_exc()}")
+
 
 '''
 create ivf-pd index https://lancedb.github.io/lancedb/ann_indexes/
 with the size of the transformer docs, index is not really needed
-but we'll do it for demonstrational purposes
+but we'll do it for demonstration purposes
 '''
-tbl.create_index(num_partitions=256, num_sub_vectors=96, vector_column_name=VECTOR_COLUMN_NAME)
+# tbl.create_index(num_partitions=256, num_sub_vectors=96, vector_column_name=VECTOR_COLUMN_NAME)
+

@@ -1,0 +1,8 @@
+MARKDOWN_DIR_TO_SCRAPE = "data/transformers/docs/source/en/"
+TEXT_CHUNKS_DIR = "data/docs_dump"
+EMB_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+LANCEDB_DIRECTORY = "data/lancedb"
+LANCEDB_TABLE_NAME = "table"
+VECTOR_COLUMN_NAME = "embedding"
+TEXT_COLUMN_NAME = "text"
+LLM_NAME = "mistralai/Mistral-7B-Instruct-v0.1"
