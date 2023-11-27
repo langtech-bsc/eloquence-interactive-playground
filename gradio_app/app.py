@@ -9,6 +9,7 @@ import logging
 from time import perf_counter
 
 import gradio as gr
+import markdown
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.ChatGptInteractor import num_tokens_from_messages
@@ -31,10 +32,10 @@ context_html_template = env.get_template('context_html_template.j2')
 # Examples
 examples = [
     'What is BERT?',
-    'Tell me about BERT deep learning model',
+    'Tell me about GPT',
+    'How to use accelerate in google colab?',
     'What is the capital of China?',
     'Why is the sky blue?',
-    'Who won the mens world cup in 2014?',
 ]
 
 
@@ -58,7 +59,7 @@ def bot(history, api_kind):
     # Retrieve documents relevant to query
     document_start = perf_counter()
 
-    query_vec = embedder.encode(query)
+    query_vec = embedder.embed(query)[0]
     documents = table.search(query_vec, vector_column_name=VECTOR_COLUMN_NAME).limit(top_k_rank).to_list()
     thresh_dist = max(thresh_dist, min(d['_distance'] for d in documents))
     documents = [d for d in documents if d['_distance'] <= thresh_dist]
@@ -69,10 +70,11 @@ def bot(history, api_kind):
 
     while len(documents) != 0:
         context = context_template.render(documents=documents)
-        context_html = context_html_template.render(documents=documents)
+        documents_html = [markdown.markdown(d) for d in documents]
+        context_html = context_html_template.render(documents=documents_html)
         messages = construct_openai_messages(context, history)
-        num_tokens = num_tokens_from_messages(messages, OPENAI_LLM_NAME)
-        if num_tokens + 512 < context_lengths[OPENAI_LLM_NAME]:
+        num_tokens = num_tokens_from_messages(messages, LLM_NAME)
+        if num_tokens + 512 < context_lengths[LLM_NAME]:
             break
         documents.pop()
     else:

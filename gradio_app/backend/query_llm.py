@@ -2,19 +2,17 @@ import gradio as gr
 
 from typing import Any, Dict, Generator, List
 
-from huggingface_hub import InferenceClient
-from transformers import AutoTokenizer
+# from huggingface_hub import InferenceClient
+# from transformers import AutoTokenizer
 from jinja2 import Environment, FileSystemLoader
 
 from settings import *
 from gradio_app.backend.ChatGptInteractor import *
 
 
-tokenizer = AutoTokenizer.from_pretrained(HF_LLM_NAME)
-
-HF_TOKEN = None
-
-hf_client = InferenceClient(HF_LLM_NAME, token=HF_TOKEN)
+# tokenizer = AutoTokenizer.from_pretrained(LLM_NAME)
+# HF_TOKEN = None
+# hf_client = InferenceClient(LLM_NAME, token=HF_TOKEN)
 
 
 def format_prompt(message: str, api_kind: str):
@@ -125,7 +123,7 @@ def construct_openai_messages(context, history):
 
 
 def generate_openai(messages):
-    cgi = ChatGptInteractor(model_name=OPENAI_LLM_NAME)
+    cgi = ChatGptInteractor(model_name=LLM_NAME)
     for part in cgi.chat_completion(messages, max_tokens=512, temperature=0, stream=True):
         yield cgi.get_stream_text(part)
 
@@ -162,7 +160,7 @@ def _generate_openai(prompt: str, history: str, temperature: float = 0.9, max_ne
 
     try:
         stream = openai.ChatCompletion.create(
-            model=OPENAI_LLM_NAME,
+            model=LLM_NAME,
             messages=formatted_prompt,
             **generate_kwargs,
             stream=True

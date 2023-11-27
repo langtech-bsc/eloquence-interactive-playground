@@ -11,85 +11,25 @@
             font-family: "Source Sans Pro";
         }
 
-        .instructions > * {
-          color: #111 !important;
-        }
-
-        details.doc-box * {
-          color: #111 !important;
-        }
-
-        .dark {
-            background: #111;
-            color: white;
-        }
-
         .doc-box {
             padding: 10px;
             margin-top: 10px;
-            background-color: #baecc2;
+            background-color: #374151;
             border-radius: 6px;
             color: #111 !important;
-            max-width: 700px;
-            box-shadow: rgba(0, 0, 0, 0.2) 0px 1px 2px 0px;
-        }
-
-        .doc-full {
-            margin: 10px 14px;
-            line-height: 1.6rem;
-        }
-
-        .instructions {
-            color: #111 !important;
-            background: #b7bdfd;
-            display: block;
-            border-radius: 6px;
-            padding: 6px 10px;
-            line-height: 1.6rem;
-            max-width: 700px;
-            box-shadow: rgba(0, 0, 0, 0.2) 0px 1px 2px 0px;
-        }
-
-        .query {
-            color: #111 !important;
-            background: #ffbcbc;
-            display: block;
-            border-radius: 6px;
-            padding: 6px 10px;
-            line-height: 1.6rem;
-            max-width: 700px;
             box-shadow: rgba(0, 0, 0, 0.2) 0px 1px 2px 0px;
         }
     </style>
 </head>
 <body>
-<div class="prose svelte-1ybaih5" id="context_html">
+
 <h2>Context:</h2>
 {% for doc in documents %}
-    <details class="doc-box">
-        <summary>
-            <b>Doc {{ loop.index }}:</b> <span class="doc-short">{{ doc[:1000] }}...</span>
-        </summary>
-        <div class="doc-full">{{ doc }}</div>
-    </details>
+    <div class="doc-box">
+        {{ doc }}
+    </div>
 {% endfor %}
-</div>
 
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-    const detailsElements = document.querySelectorAll('.doc-box');
 
-    detailsElements.forEach(detail => {
-        detail.addEventListener('toggle', function() {
-            const docShort = this.querySelector('.doc-short');
-            if (this.open) {
-                docShort.style.display = 'none';
-            } else {
-                docShort.style.display = 'inline';
-            }
-        });
-    });
-});
-</script>
 </body>
 </html>

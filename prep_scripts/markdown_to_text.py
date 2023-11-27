@@ -21,32 +21,25 @@ def remove_comments(md):
     return re.sub(r'<!--((.|\n)*)-->', '', md)
 
 
-header_pattern = re.compile(r'\n\s*\n(#{1,3})\s.*\n\s*\n')
+header_pattern = re.compile(r'\n\s*\n(#{1,3})\s(.*)\n\s*\n')
 
 
 def split_content(content):
+    text_chunk_size = context_lengths[EMBED_NAME] - 32
     _parts = content.split('\n\n')
     parts = []
     for p in _parts:
-        if len(p) < 2 * TEXT_CHUNK_SIZE:
+        if len(p) < text_chunk_size:
             parts.append(p)
         else:
             parts.extend(p.split('\n'))
 
     res = ['']
     for p in parts:
-        if len(res[-1]) + len(p) < TEXT_CHUNK_SIZE:
+        if len(res[-1]) + len(p) < text_chunk_size:
             res[-1] += p + '\n\n'
         else:
             res.append(p + '\n\n')
-
-    if (
-            len(res) >= 2 and
-            len(res[-1]) < TEXT_CHUNK_SIZE / 4 and
-            len(res[-2]) < TEXT_CHUNK_SIZE
-    ):
-        res[-2] += res[-1]
-        res.pop()
 
     return res
 
@@ -65,20 +58,30 @@ def split_markdown(md):
         chunk = ''
         for i in sorted(name_hierarchy):
             if len(name_hierarchy[i]) != 0:
-                chunk += name_hierarchy[i] + '\n\n'
+                j = i + 1
+                while j in name_hierarchy:
+                    if name_hierarchy[j].find(name_hierarchy[i]) != -1:
+                        break
+                    j += 1
+                else:
+                    chunk += f'{"#" * (i + 1)}{name_hierarchy[i]}\n\n'
 
         chunk += content
         chunk = chunk.strip()
         res.append(chunk)
 
-    md = f'\n\n{md}'  # to find a header at the top of a file
+    # to find a header at the top of a file
+    md = f'\n\n{md}'
     headers = list(header_pattern.finditer(md))
+    # only first header can be first-level
+    headers = [h for i, h in enumerate(headers) if i == 0 or len(h.group(1)) > 1]
+
     name_hierarchy = {i: '' for i in (1, 2, 3)}
     res = []
     for i in range(len(headers)):
         header = headers[i]
         level = len(header.group(1))
-        name = header.group().strip()
+        name = header.group(2).strip()
         name_hierarchy[level] = name
         if i == 0 and header.start() != 0:
             construct_chunks(md[:header.start()])

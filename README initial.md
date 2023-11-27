@@ -13,7 +13,7 @@ Deliberately stripped down to leave some room for experimenting
 - TODOs: 
   - Experiment with chunking, see how it affects the results. When deciding how to chunk it helps to think about what kind of chunks you'd like to see as context to your queries.
     - Deliverables: Demonstrate how retrieved documents differ with different chunking strategies and how it affects the output.
-  - Try out different embedding models (EMB_MODEL_NAME). Good models to start with are **sentence-transformers/all-MiniLM-L6-v2** - lightweight, **thenlper/gte-large** - relatively heavy but more powerful.
+  - Try out different embedding models (EMBED_NAME). Good models to start with are **sentence-transformers/all-MiniLM-L6-v2** - lightweight, **thenlper/gte-large** - relatively heavy but more powerful.
     - Deliverables: Demonstrate how retrieved documents differ with different embedding models and how they affect the output. Provide an estimate of how the time to embed the chunks and DB ingestion time differs (happening in **prep_scrips/lancedb_setup.py**).
   - Add a re-ranker (cross-encoder) to the pipeline. Start with sentence-transformers pages on cross-encoders [1](https://www.sbert.net/examples/applications/cross-encoder/README.html) [2](https://www.sbert.net/examples/applications/retrieve_rerank/README.html), then pick a [pretrained cross-encoder](https://www.sbert.net/docs/pretrained-models/ce-msmarco.html), e.g. **cross-encoder/ms-marco-MiniLM-L-12-v2**. Don't forget to increase the number of *retrieved* documents when using re-ranker. The number of documents used as context should stay the same.
     - Deliverables: Demonstrate how retrieved documents differ after adding a re-ranker and how it affects the output. Provide an estimate of how latency changes. 
