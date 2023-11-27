@@ -1,22 +1,20 @@
-import openai
 import gradio as gr
 
-from os import getenv
 from typing import Any, Dict, Generator, List
 
 from huggingface_hub import InferenceClient
 from transformers import AutoTokenizer
+from jinja2 import Environment, FileSystemLoader
 
 from settings import *
+from gradio_app.backend.ChatGptInteractor import *
 
 
-tokenizer = AutoTokenizer.from_pretrained(LLM_NAME)
+tokenizer = AutoTokenizer.from_pretrained(HF_LLM_NAME)
 
-OPENAI_KEY = getenv("OPENAI_API_KEY")
-HF_TOKEN = getenv("HUGGING_FACE_HUB_TOKEN")
+HF_TOKEN = None
 
-
-hf_client = InferenceClient(LLM_NAME, token=HF_TOKEN)
+hf_client = InferenceClient(HF_LLM_NAME, token=HF_TOKEN)
 
 
 def format_prompt(message: str, api_kind: str):
@@ -42,7 +40,7 @@ def format_prompt(message: str, api_kind: str):
 
 
 def generate_hf(prompt: str, history: str, temperature: float = 0.9, max_new_tokens: int = 512,
-             top_p: float = 0.6, repetition_penalty: float = 1.2) -> Generator[str, None, str]:
+                top_p: float = 0.6, repetition_penalty: float = 1.2) -> Generator[str, None, str]:
     """
     Generate a sequence of tokens based on a given prompt and history using Mistral client.
 
@@ -69,13 +67,13 @@ def generate_hf(prompt: str, history: str, temperature: float = 0.9, max_new_tok
         'repetition_penalty': repetition_penalty,
         'do_sample': True,
         'seed': 42,
-        }
-    
+    }
+
     formatted_prompt = format_prompt(prompt, "hf")
 
     try:
         stream = hf_client.text_generation(formatted_prompt, **generate_kwargs,
-                                            stream=True, details=True, return_full_text=False)
+                                           stream=True, details=True, return_full_text=False)
         output = ""
         for response in stream:
             output += response.token.text
@@ -96,8 +94,44 @@ def generate_hf(prompt: str, history: str, temperature: float = 0.9, max_new_tok
             return "I do not know what happened, but I couldn't understand you."
 
 
-def generate_openai(prompt: str, history: str, temperature: float = 0.9, max_new_tokens: int = 512,
-             top_p: float = 0.6, repetition_penalty: float = 1.2) -> Generator[str, None, str]:
+env = Environment(loader=FileSystemLoader('gradio_app/templates'))
+context_template = env.get_template('context_template.j2')
+start_system_message = context_template.render(documents=[])
+
+
+def construct_openai_messages(context, history):
+    messages = [
+        {
+            "role": "system",
+            "content": start_system_message,
+        },
+    ]
+    for q, a in history:
+        if len(a) == 0:  # the last message
+            messages.append({
+                "role": "system",
+                "content": context,
+            })
+        messages.append({
+            "role": "user",
+            "content": q,
+        })
+        if len(a) != 0:  # some of the previous LLM answers
+            messages.append({
+                "role": "assistant",
+                "content": a,
+            })
+    return messages
+
+
+def generate_openai(messages):
+    cgi = ChatGptInteractor(model_name=OPENAI_LLM_NAME)
+    for part in cgi.chat_completion(messages, max_tokens=512, temperature=0, stream=True):
+        yield cgi.get_stream_text(part)
+
+
+def _generate_openai(prompt: str, history: str, temperature: float = 0.9, max_new_tokens: int = 512,
+                    top_p: float = 0.6, repetition_penalty: float = 1.2) -> Generator[str, None, str]:
     """
     Generate a sequence of tokens based on a given prompt and history using Mistral client.
 
@@ -116,21 +150,23 @@ def generate_openai(prompt: str, history: str, temperature: float = 0.9, max_new
 
     temperature = max(float(temperature), 1e-2)  # Ensure temperature isn't too low
     top_p = float(top_p)
-    
+
     generate_kwargs = {
         'temperature': temperature,
         'max_tokens': max_new_tokens,
         'top_p': top_p,
         'frequency_penalty': max(-2., min(repetition_penalty, 2.)),
-        }
+    }
 
     formatted_prompt = format_prompt(prompt, "openai")
 
     try:
-        stream = openai.ChatCompletion.create(model="gpt-3.5-turbo-0301",
-                                                messages=formatted_prompt, 
-                                                **generate_kwargs, 
-                                                stream=True)
+        stream = openai.ChatCompletion.create(
+            model=OPENAI_LLM_NAME,
+            messages=formatted_prompt,
+            **generate_kwargs,
+            stream=True
+        )
         output = ""
         for chunk in stream:
             output += chunk.choices[0].delta.get("content", "")

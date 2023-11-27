@@ -11,8 +11,9 @@ from time import perf_counter
 import gradio as gr
 from jinja2 import Environment, FileSystemLoader
 
-from backend.query_llm import generate_hf, generate_openai
-from backend.semantic_search import table, embedder
+from gradio_app.backend.ChatGptInteractor import num_tokens_from_messages
+from gradio_app.backend.query_llm import generate_hf, generate_openai, construct_openai_messages
+from gradio_app.backend.semantic_search import table, embedder
 
 from settings import *
 
@@ -24,23 +25,29 @@ logger = logging.getLogger(__name__)
 env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 
 # Load the templates directly from the environment
-prompt_template = env.get_template('prompt_template.j2')
-template_html = env.get_template('template_html.j2')
+context_template = env.get_template('context_template.j2')
+context_html_template = env.get_template('context_html_template.j2')
 
 # Examples
-examples = ['What is the capital of China?',
-            'Why is the sky blue?',
-            'Who won the mens world cup in 2014?', ]
+examples = [
+    'What is BERT?',
+    'Tell me about BERT deep learning model',
+    'What is the capital of China?',
+    'Why is the sky blue?',
+    'Who won the mens world cup in 2014?',
+]
 
 
 def add_text(history, text):
     history = [] if history is None else history
-    history = history + [(text, None)]
+    history = history + [(text, "")]
     return history, gr.Textbox(value="", interactive=False)
 
 
 def bot(history, api_kind):
-    top_k_rank = 4
+    top_k_rank = 5
+    thresh_dist = 1.2
+    history[-1][1] = ""
     query = history[-1][0]
 
     if not query:
@@ -53,71 +60,78 @@ def bot(history, api_kind):
 
     query_vec = embedder.encode(query)
     documents = table.search(query_vec, vector_column_name=VECTOR_COLUMN_NAME).limit(top_k_rank).to_list()
+    thresh_dist = max(thresh_dist, min(d['_distance'] for d in documents))
+    documents = [d for d in documents if d['_distance'] <= thresh_dist]
     documents = [doc[TEXT_COLUMN_NAME] for doc in documents]
 
     document_time = perf_counter() - document_start
     logger.info(f'Finished Retrieving documents in {round(document_time, 2)} seconds...')
 
-    # Create Prompt
-    prompt = prompt_template.render(documents=documents, query=query)
-    prompt_html = template_html.render(documents=documents, query=query)
-
-    if api_kind == "HuggingFace":
-        generate_fn = generate_hf
-    elif api_kind == "OpenAI":
-        generate_fn = generate_openai
-    elif api_kind is None:
-        gr.Warning("API name was not provided")
-        raise ValueError("API name was not provided")
+    while len(documents) != 0:
+        context = context_template.render(documents=documents)
+        context_html = context_html_template.render(documents=documents)
+        messages = construct_openai_messages(context, history)
+        num_tokens = num_tokens_from_messages(messages, OPENAI_LLM_NAME)
+        if num_tokens + 512 < context_lengths[OPENAI_LLM_NAME]:
+            break
+        documents.pop()
     else:
-        gr.Warning(f"API {api_kind} is not supported")
-        raise ValueError(f"API {api_kind} is not supported")
+        raise gr.Error('Model context length exceeded, reload the page')
 
-    history[-1][1] = ""
-    for character in generate_fn(prompt, history[:-1]):
-        history[-1][1] = character
-        yield history, prompt_html
+    for part in generate_openai(messages):
+        history[-1][1] += part
+        yield history, context_html
+    else:
+        print('Finished generation stream.')
 
 
 with gr.Blocks() as demo:
-    chatbot = gr.Chatbot(
-        [],
-        elem_id="chatbot",
-        avatar_images=('https://aui.atlassian.com/aui/8.8/docs/images/avatar-person.svg',
-                       'https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.svg'),
-        bubble_full_width=False,
-        show_copy_button=True,
-        show_share_button=True,
+    with gr.Row():
+        with gr.Column():
+            chatbot = gr.Chatbot(
+                [],
+                elem_id="chatbot",
+                avatar_images=('https://aui.atlassian.com/aui/8.8/docs/images/avatar-person.svg',
+                               'https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.svg'),
+                bubble_full_width=False,
+                show_copy_button=True,
+                show_share_button=True,
+                height=600,
+            )
+
+            with gr.Row():
+                input_textbox = gr.Textbox(
+                    scale=3,
+                    show_label=False,
+                    placeholder="Enter text and press enter",
+                    container=False,
+                )
+                txt_btn = gr.Button(value="Submit text", scale=1)
+
+            api_kind = gr.Radio(choices=["HuggingFace", "OpenAI"], value="OpenAI", label='Backend')
+
+            # Examples
+            gr.Examples(examples, input_textbox)
+
+        with gr.Column():
+            context_html = gr.HTML()
+
+    # Turn off interactivity while generating if you click
+    txt_msg = txt_btn.click(
+        add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
+    ).then(
+        bot, [chatbot, api_kind], [chatbot, context_html]
     )
 
-    with gr.Row():
-        txt = gr.Textbox(
-            scale=3,
-            show_label=False,
-            placeholder="Enter text and press enter",
-            container=False,
-        )
-        txt_btn = gr.Button(value="Submit text", scale=1)
-
-    api_kind = gr.Radio(choices=["HuggingFace", "OpenAI"], value="HuggingFace")
-
-    prompt_html = gr.HTML()
-    # Turn off interactivity while generating if you click
-    txt_msg = txt_btn.click(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-        bot, [chatbot, api_kind], [chatbot, prompt_html])
-
     # Turn it back on
-    txt_msg.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
+    txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
     # Turn off interactivity while generating if you hit enter
-    txt_msg = txt.submit(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
-        bot, [chatbot, api_kind], [chatbot, prompt_html])
+    txt_msg = input_textbox.submit(add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False).then(
+        bot, [chatbot, api_kind], [chatbot, context_html])
 
     # Turn it back on
-    txt_msg.then(lambda: gr.Textbox(interactive=True), None, [txt], queue=False)
-
-    # Examples
-    gr.Examples(examples, txt)
+    txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 demo.queue()
 demo.launch(debug=True)
