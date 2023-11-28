@@ -13,7 +13,8 @@ import markdown
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.ChatGptInteractor import num_tokens_from_messages
-from gradio_app.backend.query_llm import generate_hf, generate_openai, construct_openai_messages
+from gradio_app.backend.cross_encoder import rerank_with_cross_encoder
+from gradio_app.backend.query_llm import *
 from gradio_app.backend.semantic_search import table, embedder
 
 from settings import *
@@ -45,42 +46,52 @@ def add_text(history, text):
     return history, gr.Textbox(value="", interactive=False)
 
 
-def bot(history, api_kind):
-    top_k_rank = 5
-    thresh_dist = 1.2
+def bot(history, llm, cross_enc):
     history[-1][1] = ""
     query = history[-1][0]
 
     if not query:
-        gr.Warning("Please submit a non-empty string as a prompt")
-        raise ValueError("Empty string was submitted")
+        raise gr.Error("Empty string was submitted")
 
     logger.info('Retrieving documents...')
-    # Retrieve documents relevant to query
-    document_start = perf_counter()
+    gr.Info('Start documents retrieval ...')
+    time = perf_counter()
 
     query_vec = embedder.embed(query)[0]
-    documents = table.search(query_vec, vector_column_name=VECTOR_COLUMN_NAME).limit(top_k_rank).to_list()
+    documents = table.search(query_vec, vector_column_name=VECTOR_COLUMN_NAME)
+    documents = documents.limit(TOP_K_RANK).to_list()
+    thresh_dist = thresh_distances[EMBED_NAME]
     thresh_dist = max(thresh_dist, min(d['_distance'] for d in documents))
     documents = [d for d in documents if d['_distance'] <= thresh_dist]
     documents = [doc[TEXT_COLUMN_NAME] for doc in documents]
 
-    document_time = perf_counter() - document_start
-    logger.info(f'Finished Retrieving documents in {round(document_time, 2)} seconds...')
+    time = perf_counter() - time
+    logger.info(f'Finished Retrieving documents in {round(time, 2)} seconds...')
 
+    logger.info('Reranking documents...')
+    gr.Info('Start documents reranking ...')
+    time = perf_counter()
+
+    documents = rerank_with_cross_encoder(cross_enc, documents, query)
+
+    time = perf_counter() - time
+    logger.info(f'Finished Reranking documents in {round(time, 2)} seconds...')
+
+    msg_constructor = get_message_constructor(llm)
     while len(documents) != 0:
         context = context_template.render(documents=documents)
         documents_html = [markdown.markdown(d) for d in documents]
         context_html = context_html_template.render(documents=documents_html)
-        messages = construct_openai_messages(context, history)
-        num_tokens = num_tokens_from_messages(messages, LLM_NAME)
-        if num_tokens + 512 < context_lengths[LLM_NAME]:
+        messages = msg_constructor(context, history)
+        num_tokens = num_tokens_from_messages(messages, 'gpt-3.5-turbo')  # todo for HF, it is approximation
+        if num_tokens + 512 < context_lengths[llm]:
             break
         documents.pop()
     else:
         raise gr.Error('Model context length exceeded, reload the page')
 
-    for part in generate_openai(messages):
+    llm_gen = get_llm_generator(llm)
+    for part in llm_gen(messages):
         history[-1][1] += part
         yield history, context_html
     else:
@@ -110,7 +121,25 @@ with gr.Blocks() as demo:
                 )
                 txt_btn = gr.Button(value="Submit text", scale=1)
 
-            api_kind = gr.Radio(choices=["HuggingFace", "OpenAI"], value="OpenAI", label='Backend')
+            llm_name = gr.Radio(
+                choices=[
+                    "gpt-3.5-turbo",
+                    "mistralai/Mistral-7B-Instruct-v0.1",
+                    "GeneZC/MiniChat-3B",
+                ],
+                value="gpt-3.5-turbo",
+                label='LLM'
+            )
+
+            cross_enc_name = gr.Radio(
+                choices=[
+                    None,
+                    "cross-encoder/ms-marco-TinyBERT-L-2-v2",
+                    "cross-encoder/ms-marco-MiniLM-L-12-v2",
+                ],
+                value=None,
+                label='Cross-Encoder'
+            )
 
             # Examples
             gr.Examples(examples, input_textbox)
@@ -122,7 +151,7 @@ with gr.Blocks() as demo:
     txt_msg = txt_btn.click(
         add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
     ).then(
-        bot, [chatbot, api_kind], [chatbot, context_html]
+        bot, [chatbot, llm_name, cross_enc_name], [chatbot, context_html]
     )
 
     # Turn it back on
@@ -130,7 +159,7 @@ with gr.Blocks() as demo:
 
     # Turn off interactivity while generating if you hit enter
     txt_msg = input_textbox.submit(add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False).then(
-        bot, [chatbot, api_kind], [chatbot, context_html])
+        bot, [chatbot, llm_name, cross_enc_name], [chatbot, context_html])
 
     # Turn it back on
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)

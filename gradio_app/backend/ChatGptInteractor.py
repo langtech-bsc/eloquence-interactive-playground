@@ -1,3 +1,4 @@
+import logging
 import time
 
 import tiktoken
@@ -9,6 +10,10 @@ with open('data/openaikey.txt') as f:
 openai.api_key = OPENAI_KEY
 
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 def num_tokens_from_messages(messages, model):
     """
     Return the number of tokens used by a list of messages.
@@ -17,7 +22,7 @@ def num_tokens_from_messages(messages, model):
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError:
-        print("Warning: model not found. Using cl100k_base encoding.")
+        logger.info("Warning: model not found. Using cl100k_base encoding.")
         encoding = tiktoken.get_encoding("cl100k_base")
     if model in {
         "gpt-3.5-turbo-0613",
@@ -33,10 +38,10 @@ def num_tokens_from_messages(messages, model):
         tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
         tokens_per_name = -1  # if there's a name, the role is omitted
     elif "gpt-3.5-turbo" in model:
-        # print("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0613.")
+        # logger.info()("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0613.")
         return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613")
     elif "gpt-4" in model:
-        # print("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
+        # logger.info()("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
         return num_tokens_from_messages(messages, model="gpt-4-0613")
     else:
         raise NotImplementedError(
@@ -54,8 +59,11 @@ def num_tokens_from_messages(messages, model):
 
 
 class ChatGptInteractor:
-    def __init__(self, model_name='gpt-3.5-turbo'):
+    def __init__(self, model_name='gpt-3.5-turbo', max_tokens=None, temperature=None, stream=False):
         self.model_name = model_name
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.stream = stream
         self.tokenizer = tiktoken.encoding_for_model(self.model_name)
 
     def chat_completion_simple(
@@ -63,15 +71,9 @@ class ChatGptInteractor:
             *,
             user_text,
             system_text=None,
-            max_tokens=None,
-            temperature=None,
-            stream=False,
     ):
         return self.chat_completion(
             self._construct_messages_simple(user_text, system_text),
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stream=stream,
         )
 
     def count_tokens_simple(self, *, user_text, system_text=None):
@@ -91,27 +93,17 @@ class ChatGptInteractor:
         })
         return messages
 
-    def chat_completion(
-            self,
-            messages,
-            max_tokens=None,
-            temperature=None,
-            stream=False,
-    ):
-        print(f'Sending request to {self.model_name} stream={stream} ...')
+    def chat_completion(self, messages):
+        logger.info(f'Sending request to {self.model_name} stream={self.stream} ...')
         t1 = time.time()
-        completion = self._request(
-            model=self.model_name,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stream=stream,
-        )
-        if stream:
-            return completion
+        completion = self._request(messages)
+
+        if self.stream:
+            return self._generator(completion)
+
         t2 = time.time()
         usage = completion['usage']
-        print(
+        logger.info(
             f'Received response: {usage["prompt_tokens"]} in + {usage["completion_tokens"]} out'
             f' = {usage["total_tokens"]} total tokens. Time: {t2 - t1:3.1f} seconds'
         )
@@ -121,14 +113,23 @@ class ChatGptInteractor:
     def get_stream_text(stream_part):
         return stream_part['choices'][0]['delta'].get('content', '')
 
+    @staticmethod
+    def _generator(completion):
+        for part in completion:
+            yield ChatGptInteractor.get_stream_text(part)
+
     def count_tokens(self, messages):
         return num_tokens_from_messages(messages, self.model_name)
 
-    def _request(self, *args, **kwargs):
+    def _request(self, messages):
         for _ in range(5):
             try:
                 completion = openai.ChatCompletion.create(
-                    *args, **kwargs,
+                    messages=messages,
+                    model=self.model_name,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    stream=self.stream,
                     request_timeout=100.0,
                 )
                 return completion
@@ -164,7 +165,8 @@ if __name__ == '__main__':
     print(cgi.chat_completion_simple(user_text=ut, system_text=st))
     print('---')
 
-    for part in cgi.chat_completion_simple(user_text=ut, system_text=st, stream=True):
-        print(cgi.get_stream_text(part), end='')
+    cgi = ChatGptInteractor(stream=True)
+    for part in cgi.chat_completion_simple(user_text=ut, system_text=st):
+        print(part, end='')
     print('\n---')
 
