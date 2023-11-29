@@ -1,5 +1,5 @@
 MARKDOWN_SOURCE_DIR = "data/transformers/docs/source/en/"
-LANCEDB_DIRECTORY = "data/lancedb"
+LANCEDB_DIRECTORY = "lancedb"
 LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
