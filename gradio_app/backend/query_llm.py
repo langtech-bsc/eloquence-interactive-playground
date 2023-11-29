@@ -53,7 +53,7 @@ def construct_openai_messages(context, history):
 def get_message_constructor(llm_name):
     if llm_name == 'gpt-3.5-turbo':
         return construct_openai_messages
-    if llm_name in ['mistralai/Mistral-7B-Instruct-v0.1', "GeneZC/MiniChat-3B"]:
+    if llm_name in ['mistralai/Mistral-7B-Instruct-v0.1', "tiiuae/falcon-180B-chat", "GeneZC/MiniChat-3B"]:
         return construct_mistral_messages
     raise ValueError('Unknown LLM name')
 
@@ -64,7 +64,7 @@ def get_llm_generator(llm_name):
             model_name=llm_name, max_tokens=512, temperature=0, stream=True
         )
         return cgi.chat_completion
-    if llm_name == 'mistralai/Mistral-7B-Instruct-v0.1':
+    if llm_name == 'mistralai/Mistral-7B-Instruct-v0.1' or llm_name == "tiiuae/falcon-180B-chat":
         hfg = HuggingfaceGenerator(
             model_name=llm_name, temperature=0, max_new_tokens=512,
         )

@@ -27,7 +27,7 @@ class HuggingfaceGenerator:
             top_p: float = None, repetition_penalty: float = None,
             stream: bool = True,
     ):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, token=HF_TOKEN)
         self.hf_client = InferenceClient(model_name, token=HF_TOKEN)
         self.stream = stream
 

@@ -165,7 +165,8 @@ with gr.Blocks() as demo:
                 choices=[
                     "gpt-3.5-turbo",
                     "mistralai/Mistral-7B-Instruct-v0.1",
-                    "GeneZC/MiniChat-3B",
+                    "tiiuae/falcon-180B-chat",
+                    # "GeneZC/MiniChat-3B",
                 ],
                 value="gpt-3.5-turbo",
                 label='LLM'
