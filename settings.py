@@ -5,8 +5,11 @@ VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
 DOCUMENT_PATH_COLUMN_NAME = "document_path"
 
-# EMBED_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-EMBED_NAME = "text-embedding-ada-002"
+CHUNK_POLICY = "md"
+# CHUNK_POLICY = "txt"
+
+EMBED_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+# EMBED_NAME = "text-embedding-ada-002"
 
 TOP_K_RANK = 50
 TOP_K_RERANK = 5
@@ -28,5 +31,5 @@ context_lengths = {
     "gpt-3.5-turbo": 4096,
     "sentence-transformers/all-MiniLM-L6-v2": 128,
     "thenlper/gte-large": 512,
-    "text-embedding-ada-002": 8191,
+    "text-embedding-ada-002": 1000,  # actual context length is 8191, but it's too much
 }

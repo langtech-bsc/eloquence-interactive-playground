@@ -1,6 +1,9 @@
 import os
 import re
 
+from bs4 import BeautifulSoup
+from markdown import markdown
+
 from settings import *
 
 
@@ -94,4 +97,33 @@ def split_markdown(md):
         construct_chunks(md)
 
     return res
+
+
+def markdown_to_text(markdown_string):
+    """ Converts a markdown string to plaintext """
+
+    # md -> html -> text since BeautifulSoup can extract text cleanly
+    html = markdown(markdown_string)
+
+    html = re.sub(r'<!--((.|\n)*)-->', '', html)
+    html = re.sub('<code>bash', '<code>', html)
+
+    # extract text
+    soup = BeautifulSoup(html, "html.parser")
+    text = ''.join(soup.findAll(string=True))
+
+    text = re.sub('```(py|diff|python)', '', text)
+    text = re.sub('```\n', '\n', text)
+    text = re.sub('-         .*', '', text)
+    text = text.replace('...', '')
+    text = re.sub('\n(\n)+', '\n\n', text)
+
+    return text
+
+
+def md2txt_then_split(md):
+    txt = markdown_to_text(md)
+    return split_content(txt)
+
+
 
