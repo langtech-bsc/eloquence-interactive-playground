@@ -1,10 +1,19 @@
 import logging
+import os
 
 from huggingface_hub import InferenceClient
 from transformers import AutoTokenizer
 
-with open('data/hftoken.txt') as f:
-    HF_TOKEN = f.read().strip()
+
+HF_TOKEN = None
+key_file = 'data/hftoken.txt'
+if os.path.exists(key_file):
+    with open(key_file) as f:
+        HF_TOKEN = f.read().strip()
+
+if HF_TOKEN is None:
+    HF_TOKEN = os.getenv('HF_TOKEN')
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -1,12 +1,20 @@
 import logging
+import os
 import time
 
 import tiktoken
 import openai
 
 
-with open('data/openaikey.txt') as f:
-    OPENAI_KEY = f.read().strip()
+OPENAI_KEY = None
+key_file = 'data/openaikey.txt'
+if os.path.exists(key_file):
+    with open(key_file) as f:
+        OPENAI_KEY = f.read().strip()
+
+if OPENAI_KEY is None:
+    OPENAI_KEY = os.getenv('OPENAI_KEY')
+
 openai.api_key = OPENAI_KEY
 
 
