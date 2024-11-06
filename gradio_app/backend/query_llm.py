@@ -24,36 +24,40 @@ def construct_mistral_messages(context, history):
             })
     return messages
 
-
-def construct_openai_messages(context, history):
-    messages = [
-        {
-            "role": "system",
-            "content": start_system_message,
-        },
-    ]
-    for q, a in history:
-        if len(a) == 0:  # the last message
-            messages.append({
+def get_construct_openai_messages(system_prompt):
+    def construct_openai_messages(context, history):
+        messages = [
+            {
                 "role": "system",
-                "content": context,
-            })
-        messages.append({
-            "role": "user",
-            "content": q,
-        })
-        if len(a) != 0:  # some of the previous LLM answers
+                "content": system_prompt,
+            },
+        ]
+        for q, a in history:
+            if len(a) == 0:  # the last message
+                messages.append({
+                    "role": "system",
+                    "content": context,
+                })
             messages.append({
-                "role": "assistant",
-                "content": a,
+                "role": "user",
+                "content": q,
             })
-    return messages
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": a,
+                })
+        return messages
+    return construct_openai_messages
 
 
-def get_message_constructor(llm_name):
+def get_message_constructor(llm_name, system_prompt):
     if llm_name == 'gpt-3.5-turbo':
-        return construct_openai_messages
-    if llm_name in ['mistralai/Mistral-7B-Instruct-v0.1', "tiiuae/falcon-180B-chat", "GeneZC/MiniChat-3B"]:
+        return get_construct_openai_messages(system_prompt)
+    if llm_name in ["meta-llama/Meta-Llama-3-8B",
+                    "mistralai/Mistral-7B-Instruct-v0.1",
+                    "tiiuae/falcon-180B-chat",
+                    "GeneZC/MiniChat-3B"]:
         return construct_mistral_messages
     raise ValueError('Unknown LLM name')
 
@@ -64,7 +68,8 @@ def get_llm_generator(llm_name):
             model_name=llm_name, max_tokens=512, temperature=0, stream=True
         )
         return cgi.chat_completion
-    if llm_name == 'mistralai/Mistral-7B-Instruct-v0.1' or llm_name == "tiiuae/falcon-180B-chat":
+    print(llm_name)
+    if llm_name in ["meta-llama/Meta-Llama-3-8B", "mistralai/Mistral-7B-Instruct-v0.1", "tiiuae/falcon-180B-chat"]:
         hfg = HuggingfaceGenerator(
             model_name=llm_name, temperature=0, max_new_tokens=512,
         )

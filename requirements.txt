@@ -6,7 +6,7 @@ aiohttp==3.8.6
 huggingface-hub==0.17.3
 lancedb>=0.3
 openai==0.28
-gradio==4.4.1
+gradio==4.43.0
 markdown==3.5.1
 tiktoken==0.5.1
 huggingface-hub==0.17.3

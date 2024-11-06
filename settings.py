@@ -4,11 +4,19 @@ LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
 DOCUMENT_PATH_COLUMN_NAME = "document_path"
-
-CHUNK_POLICY = "md"
-# CHUNK_POLICY = "txt"
+SYSTEM_PROMPT = """
+You should provide sound and complete answers to questions about the ELOQUENCE project.
+Your answers must be based on the documents provided in context.
+This is important: if the answer is not present in the context, you should never respond and just say you don't know the answer.
+The same goes if the context is empty.
+Be concise and use maximum fifty words in the answer.
+"""
 
 EMBED_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDERS = [
+    "sentence-transformers/all-MiniLM-L6-v2",
+    "text-embedding-ada-002",
+]
 # EMBED_NAME = "text-embedding-ada-002"
 
 TOP_K_RANK = 50
@@ -28,6 +36,7 @@ thresh_distances = {
 context_lengths = {
     "mistralai/Mistral-7B-Instruct-v0.1": 4096,
     "tiiuae/falcon-180B-chat": 2048,
+    "meta-llama/Meta-Llama-3-8B": 2048,
     "GeneZC/MiniChat-3B": 4096,
     "gpt-3.5-turbo": 4096,
     "sentence-transformers/all-MiniLM-L6-v2": 128,

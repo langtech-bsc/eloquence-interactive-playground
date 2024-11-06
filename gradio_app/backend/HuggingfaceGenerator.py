@@ -14,7 +14,6 @@ if os.path.exists(key_file):
 if HF_TOKEN is None:
     HF_TOKEN = os.getenv('HF_TOKEN')
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
