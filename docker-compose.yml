@@ -1,0 +1,11 @@
+services:
+
+  gradio:
+    build: 
+      context: .
+    pull_policy: build
+    restart: unless-stopped
+    ports:
+      - "8080:7860"
+    environment:
+      - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
