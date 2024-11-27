@@ -14,7 +14,6 @@ import lancedb
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.ChatGptInteractor import num_tokens_from_messages
-from gradio_app.backend.cross_encoder import rerank_with_cross_encoder
 from gradio_app.backend.query_llm import *
 from gradio_app.backend.embedders import EmbedderFactory
 
