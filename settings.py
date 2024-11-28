@@ -22,18 +22,18 @@ EMBEDDERS = [
 TOP_K_RANK = 50
 TOP_K_RERANK = 5
 
-emb_sizes = {
+EMBEDDING_SIZES = {
     "sentence-transformers/all-MiniLM-L6-v2": 384,
     "thenlper/gte-large": 1024,
     "text-embedding-ada-002": 1536,
 }
 
-thresh_distances = {
+THRESHOLD_DISTANCES = {
     "sentence-transformers/all-MiniLM-L6-v2": 1.2,
     "text-embedding-ada-002": 0.5,
 }
 
-context_lengths = {
+LLM_CONTEXT_LENGHTS = {
     "mistralai/Mistral-7B-Instruct-v0.1": 4096,
     "tiiuae/falcon-180B-chat": 2048,
     "meta-llama/Meta-Llama-3-8B": 2048,

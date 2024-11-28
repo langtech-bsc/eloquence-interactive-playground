@@ -39,6 +39,9 @@ class HuggingfaceGenerator:
             'seed': 42,
         }
 
+    def set_params(self, **params):
+        self.generate_kwargs.update(**params)
+
     def generate(self, messages):
         formatted_prompt = self.tokenizer.apply_chat_template(messages, tokenize=False)
 
@@ -50,3 +53,6 @@ class HuggingfaceGenerator:
 
         for response in stream:
             yield response.token.text
+    
+    def __call__(self, messages):
+        return self.generate(messages)

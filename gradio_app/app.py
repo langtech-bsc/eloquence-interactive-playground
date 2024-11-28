@@ -9,14 +9,11 @@ import logging
 from time import perf_counter
 
 import gradio as gr
-import markdown
 import lancedb
 from jinja2 import Environment, FileSystemLoader
 
-from gradio_app.backend.ChatGptInteractor import num_tokens_from_messages
-from gradio_app.backend.query_llm import *
-from gradio_app.backend.embedders import EmbedderFactory
-
+from gradio_app.backend.query_llm import LLMHandler
+from gradio_app.backend.retrievers import LanceDBRetriever
 from settings import *
 
 # Setting up the logging
@@ -31,7 +28,9 @@ context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
 db = lancedb.connect(LANCEDB_DIRECTORY)
-db_tables = ["eloquence_proposal"]
+retriever = LanceDBRetriever(db, threshold=None)
+llm_handler = LLMHandler()
+
 # Examples
 examples = [
     "What is the goal of Eloquence?",
@@ -56,8 +55,7 @@ def _get_tables():
     )
 
 
-def bot(history, llm, embed, top_k, temp, top_p, index_name, system_prompt, task):
-    cross_enc = None
+def interact(history, llm, embed, top_k, temp, top_p, index_name, system_prompt, task):
     history[-1][1] = ""
     query = history[-1][0]
 
@@ -66,62 +64,17 @@ def bot(history, llm, embed, top_k, temp, top_p, index_name, system_prompt, task
 
     logger.info('Retrieving documents...')
     documents = [""]
-    t = perf_counter()
     if task == "RAG":
         gr.Info('Start documents retrieval ...')
 
-        table = db.open_table(index_name)
-
-        embedder = EmbedderFactory.get_embedder(embed)
-
-        query_vec = embedder.embed([query])[0]
-        documents = table.search(query_vec, vector_column_name=VECTOR_COLUMN_NAME)
-        # top_k_rank = TOP_K_RANK if cross_enc is not None else TOP_K_RERANK
         top_k = int(top_k)
-        documents = documents.limit(top_k).to_list()
-        thresh_dist = thresh_distances[embed]
-        thresh_dist = max(thresh_dist, min(d['_distance'] for d in documents))
-        # documents = [d for d in documents if d['_distance'] <= thresh_dist]
-        documents = [doc[TEXT_COLUMN_NAME] for doc in documents]
+        documents = retriever(index_name, query, embed).limit(top_k).to_list()
 
-    t = perf_counter() - t
-    logger.info(f'Finished Retrieving documents in {round(t, 2)} seconds...')
-
-    # logger.info('Reranking documents...')
-    # gr.Info('Start documents reranking ...')
-    t = perf_counter()
-
-#    documents = rerank_with_cross_encoder(cross_enc, documents, query)
-
-    t = perf_counter() - t
-    logger.info(f'Finished Reranking documents in {round(t, 2)} seconds...')
-
-    msg_constructor = get_message_constructor(llm, system_prompt)
-    while len(documents) != 0:
-        if task != "RAG":
-            documents = []
-        context = context_template.render(documents=documents)
-        documents_html = [markdown.markdown(d) for d in documents]
-        context_html = context_html_template.render(documents=documents_html)
-        messages = msg_constructor(context, history)
-        num_tokens = num_tokens_from_messages(messages, 'gpt-3.5-turbo')  # todo for HF, it is approximation
-        if num_tokens + 512 < context_lengths[llm]:
-            break
-        documents.pop()
-    else:
-        raise gr.Error('Model context length exceeded, reload the page')
-
-    llm_gen = get_llm_generator(llm)
-    logger.info('Generating answer...')
     gr.Info("Generating answer...")
-    t = perf_counter()
-    # yield history, context_html
-    for part in llm_gen(messages):
+    for part in llm_handler(llm, system_prompt, history, documents, temperature=temp, top_p=top_p):
         history[-1][1] += part
         yield history, context_html
-    else:
-        t = perf_counter() - t
-        logger.info(f'Finished Generating answer in {round(t, 2)} seconds...')
+
 
 css = """
 button.secondary {
@@ -147,10 +100,6 @@ div.svelte-sa48pu>.form>* {
 """
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
-    # with gr.Row():
-    #     about = gr.Button(value="About")
-    #     create_index = gr.Button(value="Create Index")
-    #     playground = gr.Button(value="Playground")
 
     with gr.Row():
         with gr.Column():
@@ -185,26 +134,13 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
             )
             index_name = gr.Radio(
                 label="Index name",
-                # choices=db_tables,
                 value="eloquence_proposal"
             )
-
-            # cross_enc_name = gr.Radio(
-            #     choices=[
-            #         None,
-            #         "cross-encoder/ms-marco-TinyBERT-L-2-v2",
-            #         "cross-encoder/ms-marco-MiniLM-L-12-v2",
-            #     ],
-            #     value=None,
-            #     label='Cross-Encoder'
-            # )
-
             llm_name = gr.Radio(
                 choices=[
                     "gpt-3.5-turbo",
                     "meta-llama/Meta-Llama-3-8B",
                     "tiiuae/falcon-180B-chat",
-                    # "GeneZC/MiniChat-3B",
                 ],
                 value="gpt-3.5-turbo",
                 label='LLM'
@@ -214,8 +150,8 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
             chatbot = gr.Chatbot(
                 [],
                 elem_id="chatbot",
-                avatar_images=('https://aui.atlassian.com/aui/8.8/docs/images/avatar-person.svg',
-                               'data/eloq.png'),
+                avatar_images=('assets/user.svg',
+                               'assets/eloq.png'),
                 bubble_full_width=True,
                 show_copy_button=True,
                 # show_share_button=True,
@@ -246,7 +182,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
     txt_msg = txt_btn.click(
         add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
     ).then(
-        bot, [chatbot, llm_name, embed_name, top_k, temp, top_p, index_name, system_prompt, task], [chatbot, context_html], api_name="llm"
+        interact, [chatbot, llm_name, embed_name, top_k, temp, top_p, index_name, system_prompt, task], [chatbot, context_html], api_name="llm"
     )
 
     # Turn it back on
@@ -254,7 +190,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
 
     # Turn off interactivity while generating if you hit enter
     txt_msg = input_textbox.submit(add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False).then(
-        bot, [chatbot, llm_name, embed_name, top_k, temp, top_p, index_name, system_prompt, task], [chatbot, context_html])
+        interact, [chatbot, llm_name, embed_name, top_k, temp, top_p, index_name, system_prompt, task], [chatbot, context_html])
 
     # Turn it back on
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)

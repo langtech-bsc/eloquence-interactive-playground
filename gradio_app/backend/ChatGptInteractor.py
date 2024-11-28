@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def num_tokens_from_messages(messages, model):
+def apx_num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613"):
     """
     Return the number of tokens used by a list of messages.
     https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
@@ -47,10 +47,10 @@ def num_tokens_from_messages(messages, model):
         tokens_per_name = -1  # if there's a name, the role is omitted
     elif "gpt-3.5-turbo" in model:
         # logger.info()("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0613.")
-        return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613")
+        return apx_num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613")
     elif "gpt-4" in model:
         # logger.info()("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
-        return num_tokens_from_messages(messages, model="gpt-4-0613")
+        return apx_num_tokens_from_messages(messages, model="gpt-4-0613")
     else:
         raise NotImplementedError(
             f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."""
@@ -67,10 +67,13 @@ def num_tokens_from_messages(messages, model):
 
 
 class ChatGptInteractor:
-    def __init__(self, model_name='gpt-3.5-turbo', max_tokens=None, temperature=None, stream=False):
+    def __init__(self, model_name='gpt-3.5-turbo', max_tokens=None, temperature=None, top_p=None, stream=False):
         self.model_name = model_name
-        self.max_tokens = max_tokens
-        self.temperature = temperature
+        self.generate_kwargs = {
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p
+        }
         self.stream = stream
         self.tokenizer = tiktoken.encoding_for_model(self.model_name)
 
@@ -100,6 +103,9 @@ class ChatGptInteractor:
             "content": user_text
         })
         return messages
+    
+    def __call__(self, messages):
+        return self.chat_completion(messages)
 
     def chat_completion(self, messages):
         logger.info(f'Sending request to {self.model_name} stream={self.stream} ...')
@@ -127,7 +133,10 @@ class ChatGptInteractor:
             yield ChatGptInteractor.get_stream_text(part)
 
     def count_tokens(self, messages):
-        return num_tokens_from_messages(messages, self.model_name)
+        return apx_num_tokens_from_messages(messages, self.model_name)
+
+    def set_params(self, **params):
+        self.generate_kwargs.update(params)
 
     def _request(self, messages):
         for _ in range(5):
@@ -135,10 +144,9 @@ class ChatGptInteractor:
                 completion = openai.ChatCompletion.create(
                     messages=messages,
                     model=self.model_name,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature,
                     stream=self.stream,
                     request_timeout=100.0,
+                    **self.generate_kwargs
                 )
                 return completion
             except (openai.error.Timeout, openai.error.ServiceUnavailableError):
