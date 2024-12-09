@@ -52,12 +52,13 @@ def get_construct_openai_messages(system_prompt):
 
 
 def get_message_constructor(llm_name, system_prompt):
-    if llm_name == 'gpt-3.5-turbo':
+    if llm_name in ['gpt-3.5-turbo']:
         return get_construct_openai_messages(system_prompt)
     if llm_name in ["meta-llama/Meta-Llama-3-8B",
                     "mistralai/Mistral-7B-Instruct-v0.1",
                     "tiiuae/falcon-180B-chat",
-                    "GeneZC/MiniChat-3B"]:
+                    "GeneZC/MiniChat-3B",
+                    ]:
         return construct_mistral_messages
     raise ValueError('Unknown LLM name')
 
@@ -80,7 +81,5 @@ def get_llm_generator(llm_name):
             model_name=llm_name, temperature=0, max_new_tokens=250, stream=False,
         )
         return hfg.generate
+
     raise ValueError('Unknown LLM name')
-
-
-

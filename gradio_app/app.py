@@ -203,7 +203,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
                 choices=[
                     "gpt-3.5-turbo",
                     "meta-llama/Meta-Llama-3-8B",
-                    "tiiuae/falcon-180B-chat",
+                    "tiiuae/falcon-180B-chat"
                     # "GeneZC/MiniChat-3B",
                 ],
                 value="gpt-3.5-turbo",
