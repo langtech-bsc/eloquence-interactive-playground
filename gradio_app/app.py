@@ -138,6 +138,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
             )
             llm_name = gr.Radio(
                 choices=[
+                    "bsc",
                     "gpt-3.5-turbo",
                     "meta-llama/Meta-Llama-3-8B",
                     "tiiuae/falcon-180B-chat",
