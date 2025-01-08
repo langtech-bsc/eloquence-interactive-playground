@@ -1,8 +1,6 @@
-import shutil
 import time
 
 import lancedb
-import openai
 import pyarrow as pa
 import pandas as pd
 from pathlib import Path
@@ -27,7 +25,7 @@ def run_ingest(file_path, chunk_size, embed_name, table_name):
     batch_size = 32
 
     schema = pa.schema([
-        pa.field(VECTOR_COLUMN_NAME, pa.list_(pa.float32(), emb_sizes[EMBED_NAME])),
+        pa.field(VECTOR_COLUMN_NAME, pa.list_(pa.float32(), EMBEDDING_SIZES[EMBED_NAME])),
         pa.field(TEXT_COLUMN_NAME, pa.string()),
         pa.field(DOCUMENT_PATH_COLUMN_NAME, pa.string()),
     ])

@@ -61,28 +61,28 @@ class LLMHandler:
     @staticmethod
     def construct_message_list(system_prompt, context, history):
         llm_backend = os.getenv("LLM_BACKEND", "bsc")
-        if llm_backend in ["openai", "bsc"]:
-            messages = [
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-            ]
-            for q, a in history:
-                if len(a) == 0:  # the last message
-                    messages.append({
-                        "role": "system",
-                        "content": context,
-                    })
+        # if llm_backend in ["openai", "bsc"]:
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+        ]
+        for q, a in history:
+            if len(a) == 0:  # the last message
                 messages.append({
-                    "role": "user",
-                    "content": q,
+                    "role": "system",
+                    "content": context,
                 })
-                if len(a) != 0:  # some of the previous LLM answers
-                    messages.append({
-                        "role": "assistant",
-                        "content": a,
-                    })
-        else:
-            raise ValueError(f"Unknown LLM Backend {llm_backend}")
+            messages.append({
+                "role": "user",
+                "content": q,
+            })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": a,
+                })
+        # else:
+        #     raise ValueError(f"Unknown LLM Backend {llm_backend}")
         return messages

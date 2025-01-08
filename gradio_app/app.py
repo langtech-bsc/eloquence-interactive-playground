@@ -67,8 +67,7 @@ def interact(history, llm, embed, top_k, temp, top_p, index_name, system_prompt,
     if task == "RAG":
         gr.Info('Start documents retrieval ...')
 
-        top_k = int(top_k)
-        documents = retriever(index_name, query, embed).limit(top_k).to_list()
+        documents = retriever(index_name, query, embed, top_k)
 
     gr.Info("Generating answer...")
     for part in llm_handler(llm, system_prompt, history, documents, temperature=temp, top_p=top_p):
