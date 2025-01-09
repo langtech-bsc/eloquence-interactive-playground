@@ -51,30 +51,7 @@ def perform_ingest(table_name, chunk_size, embed_name, file):
     run_ingest(os.path.join(FOLDER, file), chunk_size, embed_name, table_name)
     gr.Info("Ingestion Done!")
 
-css = """
-button.secondary {
-    background: #18f2ad;
-    border-radius: 6px;
-}
-.svelte-1mhtq7j {
-    background: #f2d518;
-}
-label.selected {
-    background: #f2d518;
-}
-.gallery button {
-    background: #f27618;
-    border-radius: 6px;
-}
-#status, #status textarea {
-    font-weight: bold !important;
-    color: white !important;
-    background: #f27618 !important;
-    border-radius: 6px;
-}
-"""
-
-with gr.Blocks(theme=gr.themes.Monochrome(), css=css,) as demo:
+with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
     with gr.Blocks():
         with gr.Row():
             index_name = gr.Textbox(label="Index Name")

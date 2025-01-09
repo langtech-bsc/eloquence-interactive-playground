@@ -1,4 +1,6 @@
 import time
+import json
+import os
 
 import lancedb
 import pyarrow as pa
@@ -67,6 +69,13 @@ def run_ingest(file_path, chunk_size, embed_name, table_name):
 
     time_embed = sum(time_embed)
     time_ingest = sum(time_ingest)
+    cfg = {}
+    if os.path.exists(INDEX_CONFIG_PATH):
+        with open(INDEX_CONFIG_PATH, "rt") as fd:
+            cfg = json.load(fd)
+    cfg[table_name] = embed_name
+    with open(INDEX_CONFIG_PATH, "wt") as fd:
+        json.dump(cfg, fd)
     print(f'Embedding: {time_embed}, Ingesting: {time_ingest}')
 
 

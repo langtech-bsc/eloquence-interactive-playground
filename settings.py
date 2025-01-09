@@ -4,13 +4,6 @@ LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
 DOCUMENT_PATH_COLUMN_NAME = "document_path"
-SYSTEM_PROMPT = """
-You should provide sound and complete answers to questions about the ELOQUENCE project.
-Your answers must be based on the documents provided in context.
-This is important: if the answer is not present in the context, you should never respond and just say you don't know the answer.
-The same goes if the context is empty.
-Be concise and use maximum fifty words in the answer.
-"""
 
 EMBED_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDERS = [
@@ -43,3 +36,58 @@ LLM_CONTEXT_LENGHTS = {
     "thenlper/gte-large": 512,
     "text-embedding-ada-002": 1000,  # actual context length is 8191, but it's too much
 }
+
+INDEX_CONFIG_PATH = "configurations/indexes.json"
+PROMPTS_PATH = "configurations/prompts.json"
+TASK_CONFIG_DIR = "configurations/task_configs/"
+SQL_DB = "ip.db"
+
+CSS = """
+button.secondary {
+    background: #18f2ad;
+    border-radius: 6px;
+}
+button.secondary:hover {
+    background: #10d28d;
+    border-radius: 6px;
+}
+.svelte-1mhtq7j {
+    background: #f2d518 !important;
+    color: #363533;
+}
+.svelte-1mhtq7j:hover, .svelte-1mhtq7j:hover > *, .svelte-1mhtq7j.selected, .svelte-1mhtq7j.selected > * {
+    background: #e5ac42 !important;
+}
+
+.svelte-1mhtq7j.selected {
+    border: 2px double #363533;
+}
+
+label.selected {
+    background: #f2d518!;
+    text: black;
+}
+.gallery button {
+    background: #f27618;
+    border-radius: 6px;
+}
+.gallery button:hover {
+    background: #d25610;
+    border-radius: 6px;
+}
+input[type=number] {
+    width: 70px;
+}
+div.svelte-sa48pu>.form>* {
+    min-width: 70px;
+}
+.svelte-1mhtq7j {
+    background: #f2d518;
+}
+#status, #status textarea {
+    font-weight: bold !important;
+    color: white !important;
+    background: #f27618 !important;
+    border-radius: 6px;
+}
+"""

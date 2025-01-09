@@ -1,3 +1,4 @@
+import gradio as gr
 from gradio_app.backend.embedders import EmbedderFactory
 from settings import VECTOR_COLUMN_NAME, TEXT_COLUMN_NAME, THRESHOLD_DISTANCES
 
@@ -12,6 +13,7 @@ class LanceDBRetriever:
         if embedding_type in self.emb_cache:
             embedder = self.emb_cache[embedding_type]
         else:
+            # gr.Info("Loading embedding model", embedding_type)
             embedder = EmbedderFactory.get_embedder(embedding_type)
             self.emb_cache[embedding_type] = embedder
 
