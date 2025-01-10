@@ -75,7 +75,7 @@ def run_ingest(file_path, chunk_size, embed_name, table_name):
             cfg = json.load(fd)
     cfg[table_name] = embed_name
     with open(INDEX_CONFIG_PATH, "wt") as fd:
-        json.dump(cfg, fd)
+        json.dump(cfg, fd, indent=4)
     print(f'Embedding: {time_embed}, Ingesting: {time_ingest}')
 
 

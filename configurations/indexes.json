@@ -1,1 +1,3 @@
-{"eloquence": "sentence-transformers/all-MiniLM-L6-v2"}
+{
+    "Eloquence": "sentence-transformers/all-MiniLM-L6-v2"
+}

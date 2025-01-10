@@ -9,6 +9,7 @@ import logging
 import os
 import json
 import sqlite3
+import datetime
 
 import gradio as gr
 import markdown
@@ -62,8 +63,8 @@ def add_text(history, text):
     return history, gr.Textbox(value="", interactive=False)
 
 
-def get_dynamic_fields():
-    return _get_tables(), _get_configs(), _get_prompts()
+def get_dynamic_fields(selected_logs):
+    return _get_tables(), _get_configs(), _get_prompts(), _get_historical_prompts()
 
 
 def _get_tables():
@@ -81,6 +82,7 @@ def _get_prompts():
         choices=[(p["name"], p["prompt"]) for p in prompts]
     )
 
+
 def _get_configs():
     configs = []
     for fn in os.listdir(TASK_CONFIG_DIR):
@@ -90,6 +92,18 @@ def _get_configs():
     return gr.Radio(
         label="Task configuration",
         choices=configs,
+    )
+
+
+def _get_historical_prompts():
+    history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
+    logs = []
+    if os.path.exists(history_path):
+        with open(history_path, "rt") as fd:
+            logs = json.load(fd)
+    return gr.Dropdown(
+        label="History",
+        choices=[p["name"] for p in logs]
     )
 
 
@@ -125,7 +139,33 @@ def validate(text, llm, top_k, temp, top_p, index_name, system_prompt, task_conf
     if task_config["RAG"] and not index_name:
         raise gr.Error("Index required and not selected")
 
-def interact(history, llm, top_k, temp, top_p, index_name, system_prompt, task_config):
+
+def load_history(name, orig_history, orig_prompt):
+    history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
+    if os.path.exists(history_path):
+        with open(history_path, "rt") as fd:
+            logs = json.load(fd)
+    log = [l for l in logs if l["name"] == name]
+    if len(log) > 0:
+        return log[0]["history"], log[0]["prompt"]
+    else:
+        return orig_history, orig_prompt
+
+
+def store_history(history, prompt):
+    history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
+    if os.path.exists(history_path):
+        with open(history_path, "rt") as fd:
+            logs = json.load(fd)
+    else:
+        logs = []
+    logs.append({"history": history, "prompt": prompt, "name": f"{datetime.date.today()}-{prompt[:10]}..."})
+    with open(history_path, "wt") as fd:
+        json.dump(logs, fd)
+    gr.Info("History Saved")
+
+
+def interact(history, llm, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
     history[-1][1] = ""
     query = history[-1][0]
     task_config = json.loads(task_config)
@@ -142,7 +182,7 @@ def interact(history, llm, top_k, temp, top_p, index_name, system_prompt, task_c
 
     documents_html = [markdown.markdown(d) for d in documents]
     context_html = context_html_template.render(documents=documents_html)
-    for part in llm_handler(llm, system_prompt, history, documents, temperature=temp, top_p=top_p):
+    for part in llm_handler(llm, system_prompt, history, documents, temperature=temp, top_p=top_p, max_tokens=max_tokens):
         history[-1][1] += part
         yield history, context_html,  gr.update(visible=task_config["RAG"] == True)
 
@@ -162,7 +202,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
                 # autoscroll=True,
             )
 
-            with gr.Row():
+            with gr.Row(equal_height=True):
                 input_textbox = gr.Textbox(
                     scale=3,
                     show_label=False,
@@ -170,10 +210,11 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
                     container=False,
                 )
                 txt_btn = gr.Button(value="Submit text", scale=1)
+                save_btn = gr.Button(value="Save current state", scale=1)
             with gr.Row():
                 gr.Examples(examples, input_textbox)
         
-        with gr.Column(visible=False) as rag_column:
+        with gr.Column(visible=False, scale=0) as rag_column:
             context_html = gr.HTML()
     
     with gr.Row():
@@ -189,6 +230,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
             top_p = gr.Number(
                 value=0.95,
                 label="Top p",
+            )
+            max_tokens = gr.Number(
+                value=300,
+                label="Max tokens",
             )
             index_name = gr.Radio(
                 label="Index name",
@@ -207,41 +252,50 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
         with gr.Column():
             system_prompt = gr.Textbox(
                 value="Enter prompt...",
-                label="System Prompt:"
+                label="System Prompt"
             )
             selected_prompt = gr.Dropdown(
                 choices=[]
             )
+            with gr.Row():
+                selected_logs = gr.Dropdown(
+                    choices=[]
+                )
+                select_log_btn = gr.Button(
+                    value="Load history",
+                    scale=0
+                )
+
 
     demo.load(
-        get_dynamic_fields, [], [index_name, task_config, selected_prompt]
+        get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs]
     )
 
     selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
+    select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
     # Turn off interactivity while generating if you click
     txt_msg = txt_btn.click(
         validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
     ).success(
         add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
     ).then(
-        interact, [chatbot, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], [chatbot, context_html, rag_column], api_name="llm"
+        interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column], api_name="llm"
     )
-
     # Turn it back on
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
-
+    save_btn.click(store_history, [chatbot, system_prompt], [])
     # Turn off interactivity while generating if you hit enter
     txt_msg = input_textbox.submit(
         validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
     ).success(
         add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
     ).then(
-        interact, [chatbot, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], [chatbot, context_html, rag_column]
+        interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column]
     )
 
     # Turn it back on
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 demo.queue()
-# demo.launch(debug=True)
-demo.launch(debug=True, auth=authenticate)
+demo.launch(debug=True)
+# demo.launch(debug=True, auth=authenticate)

@@ -19,16 +19,20 @@
             color: #111 !important;
             box-shadow: rgba(0, 0, 0, 0.2) 0px 2px 3px 0px;
         }
+        #context_side {
+            max-height: 40em;
+            overflow: auto;
+        }
     </style>
 </head>
 <body>
-
-<h2>Context:</h2>
+<div id="context_side">
 {% for doc in documents %}
     <div class="doc-box">
         {{ doc }}
     </div>
 {% endfor %}
+</div>
 
 
 </body>

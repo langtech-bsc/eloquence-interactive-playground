@@ -40,27 +40,32 @@ LLM_CONTEXT_LENGHTS = {
 INDEX_CONFIG_PATH = "configurations/indexes.json"
 PROMPTS_PATH = "configurations/prompts.json"
 TASK_CONFIG_DIR = "configurations/task_configs/"
+USER_WORKSPACES = "workspaces"
 SQL_DB = "ip.db"
 
 CSS = """
 button.secondary {
-    background: #18f2ad;
+    background: #018f69;
     border-radius: 6px;
+    max-height:4em;
+
 }
 button.secondary:hover {
-    background: #10d28d;
+    background: #016f49;
     border-radius: 6px;
+    max-height:4em;
 }
 .svelte-1mhtq7j {
-    background: #f2d518 !important;
-    color: #363533;
+    background: #565553 !important;
+    color: white;
 }
 .svelte-1mhtq7j:hover, .svelte-1mhtq7j:hover > *, .svelte-1mhtq7j.selected, .svelte-1mhtq7j.selected > * {
-    background: #e5ac42 !important;
+    background:  #f2d518 !important;
+     color: #363533;
 }
 
 .svelte-1mhtq7j.selected {
-    border: 2px double #363533;
+    border: 3px double #363533;
 }
 
 label.selected {

@@ -1,4 +1,5 @@
 {
     "name": "Basic LLM",
-    "RAG": false
+    "RAG": false,
+    "interface": "text"
 }

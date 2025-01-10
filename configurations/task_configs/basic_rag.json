@@ -1,4 +1,5 @@
 {
     "name": "RAG",
-    "RAG": true
+    "RAG": true,
+    "interface": "text"
 }
