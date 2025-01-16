@@ -14,6 +14,7 @@ import datetime
 import gradio as gr
 import markdown
 import lancedb
+from transformers import pipeline
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.query_llm import LLMHandler
@@ -36,6 +37,8 @@ retriever = LanceDBRetriever(vector_store, threshold=None)
 llm_handler = LLMHandler()
 
 
+model_id = "openai/whisper-tiny"  # update with your model id
+pipe = pipeline("automatic-speech-recognition", model=model_id)
 def authenticate(user, password):
     db_conn = sqlite3.connect(SQL_DB).cursor()
     result = db_conn.execute(f"SELECT username FROM users WHERE username='{user}' and password='{password}'").fetchone()
@@ -56,11 +59,6 @@ def toggle_sidebar(state):
     state = not state
     return gr.update(visible = state), state
 
-
-def add_text(history, text):
-    history = [] if history is None else history
-    history = history + [(text, "")]
-    return history, gr.Textbox(value="", interactive=False)
 
 
 def get_dynamic_fields(selected_logs):
@@ -95,6 +93,24 @@ def _get_configs():
     )
 
 
+def transcribe(filepath):
+    try:
+        output = pipe(
+            filepath,
+            max_new_tokens=256,
+            generate_kwargs={
+                "task": "transcribe",
+                "language": "english",
+            },  # update with the language you've fine-tuned on
+            chunk_length_s=30,
+            batch_size=8,
+        )
+        return output["text"]
+    except:
+        return ""
+
+
+
 def _get_historical_prompts():
     history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
     logs = []
@@ -111,14 +127,14 @@ def update_prompt(selected_prompt):
     return selected_prompt
 
 
-def validate(text, llm, top_k, temp, top_p, index_name, system_prompt, task_config):
-    if len(text) == 0:
+def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, task_config):
+    if len(text) == 0 and len(audio) == 0:
         raise gr.Error("Empty query")
     if llm not in LLM_CONTEXT_LENGHTS:
         raise gr.Error("Unknown LLM")
     
     def _check_float(val, bmin, bmax):
-        try:
+        try:    
             val = float(val)
         except:
             return False
@@ -152,6 +168,17 @@ def load_history(name, orig_history, orig_prompt):
         return orig_history, orig_prompt
 
 
+def reset_space():
+    return "", "", ""
+
+
+def load_task(task_config):
+    task_config = json.loads(task_config)
+    if task_config["interface"] == "audio":
+        return gr.update(visible=False), gr.update(visible=True)
+    else:
+        return gr.update(visible=True), gr.update(visible=False)
+
 def store_history(history, prompt):
     history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
     if os.path.exists(history_path):
@@ -165,12 +192,20 @@ def store_history(history, prompt):
     gr.Info("History Saved")
 
 
-def interact(history, llm, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
-    history[-1][1] = ""
-    query = history[-1][0]
+def interact(history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
     task_config = json.loads(task_config)
     with open(INDEX_CONFIG_PATH, "rt") as fd:
         index_config = json.load(fd)
+
+    history = [] if history is None else history
+    history_user_entry = None
+    if task_config["interface"] == "audio":
+        query = audio_input
+        history_user_entry = query
+    else:
+        history_user_entry = input_text
+        query = input_text
+
     if not query:
         raise gr.Error("Empty string was submitted")
 
@@ -182,9 +217,13 @@ def interact(history, llm, top_k, temp, top_p, max_tokens, index_name, system_pr
 
     documents_html = [markdown.markdown(d) for d in documents]
     context_html = context_html_template.render(documents=documents_html)
-    for part in llm_handler(llm, system_prompt, history, documents, temperature=temp, top_p=top_p, max_tokens=max_tokens):
+    history += [[history_user_entry, ""]]
+    for part in llm_handler(llm_name, system_prompt, history, documents, temperature=temp, top_p=top_p, max_tokens=max_tokens):
         history[-1][1] += part
-        yield history, context_html,  gr.update(visible=task_config["RAG"] == True)
+        yield (history,
+               context_html, 
+               gr.update(visible=task_config["RAG"] == True),
+               gr.Textbox(value="", interactive=False))
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     with gr.Row():
@@ -203,14 +242,29 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
             )
 
             with gr.Row(equal_height=True):
-                input_textbox = gr.Textbox(
-                    scale=3,
-                    show_label=False,
-                    placeholder="Enter text and press enter",
-                    container=False,
-                )
-                txt_btn = gr.Button(value="Submit text", scale=1)
-                save_btn = gr.Button(value="Save current state", scale=1)
+                with gr.Column(visible=True) as text_column:
+                    input_textbox = gr.Textbox(
+                        scale=3,
+                        show_label=False,
+                        container=False,
+                    )
+                with gr.Column(visible=False) as audio_column:
+                    audio_input = gr.Textbox(
+                        visible=True
+                    )
+                    mic_transcribe = gr.Interface(
+                        fn=transcribe,
+                        inputs=gr.Audio(sources="microphone", type="filepath"),
+                        outputs=audio_input,
+                        allow_flagging="never",
+                        live=True
+                        # submit_btn=
+                    )
+
+                txt_btn = gr.Button(value="Submit", scale=0)
+                save_btn = gr.Button(value="Save current state", scale=0)
+                clear_btn = gr.Button(value="Clear space", scale=0)
+
             with gr.Row():
                 gr.Examples(examples, input_textbox)
         
@@ -273,28 +327,30 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
 
     selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
     select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
+    task_config.change(load_task, [task_config], [text_column, audio_column])
+    save_btn.click(store_history, [chatbot, system_prompt], [])
+    clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt])
     # Turn off interactivity while generating if you click
     txt_msg = txt_btn.click(
-        validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
+        validate, [input_textbox, audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
     ).success(
-        add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
-    ).then(
-        interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column], api_name="llm"
+        interact,
+        [chatbot, input_textbox, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+        [chatbot, context_html, rag_column, input_textbox],
+        api_name="llm"
     )
     # Turn it back on
     txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
-    save_btn.click(store_history, [chatbot, system_prompt], [])
     # Turn off interactivity while generating if you hit enter
-    txt_msg = input_textbox.submit(
-        validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
-    ).success(
-        add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
-    ).then(
-        interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column]
-    )
-
+    # txt_msg = input_textbox.submit(
+    #     validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
+    # ).success(
+    #     add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
+    # ).then(
+    #     interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column]
+    # )
     # Turn it back on
-    txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
+    # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 demo.queue()
 demo.launch(debug=True)
