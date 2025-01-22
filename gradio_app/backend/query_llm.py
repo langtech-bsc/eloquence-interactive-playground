@@ -1,4 +1,5 @@
 import os
+import logging
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -7,13 +8,16 @@ from gradio_app.backend.ChatGptInteractor import apx_num_tokens_from_messages, C
 from gradio_app.backend.HuggingfaceGenerator import HuggingfaceGenerator
 from gradio_app.backend.BSCInteract import BSCInteractor
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 
 
 class LLMHandler:
     def __init__(self) -> None:
-        self.known_llms = ["gpt-3.5-turbo", "meta-llama/Meta-Llama-3-8B", "bsc"]
+        self.known_llms = ["gpt-3.5-turbo", "meta-llama/Meta-Llama-3-8B", "bsc", "bsc2", "bsc3"]
         self._cache = {}
     
     def __call__(self, llm_name, system_prompt, history, documents, **params):
@@ -29,12 +33,12 @@ class LLMHandler:
     def build_messages(documents, history, llm, system_prompt):
         while len(documents) != 0:
             context = context_template.render(documents=documents)
-            messages = LLMHandler.construct_message_list(system_prompt, context, history)
+            messages = LLMHandler.construct_message_list(llm, system_prompt, context, history)
             num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
             if num_tokens + 512 < LLM_CONTEXT_LENGHTS[llm]:
                 break
             documents.pop()
-        messages = LLMHandler.construct_message_list(system_prompt, context, history)
+        messages = LLMHandler.construct_message_list(llm, system_prompt, context, history)
         return messages
         
         
@@ -50,41 +54,60 @@ class LLMHandler:
                 model_name=llm_name, temperature=0, max_new_tokens=512,
             )
             return hfg
-        if llm_name.lower() in ["bsc"]:
-            bsc_api_endpoint = os.getenv("OPENAI_API_ENDPOINT_URL")
+        if llm_name.lower() in ["bsc", "bsc2", "bsc3"]:
+            if llm_name == "bsc":
+                bsc_api_endpoint = os.getenv("OPENAI_API_ENDPOINT_URL")
+            elif llm_name == "bsc2":
+                bsc_api_endpoint = os.getenv("OPENAI_API_ENDPOINT_URL_2")
+            else:
+                bsc_api_endpoint = os.getenv("OPENAI_API_ENDPOINT_URL_3")
+            logger.info(bsc_api_endpoint)
             cgi = BSCInteractor(
                 api_endpoint=bsc_api_endpoint, model_name="llama3-8B"
             )
+            return cgi
 
         raise ValueError('Unknown LLM name')
     
     @staticmethod
-    def construct_message_list(system_prompt, context, history):
-        llm_backend = os.getenv("LLM_BACKEND", "bsc")
-        # if llm_backend in ["openai", "bsc"]:
-        messages = [
+    def construct_message_list(llm_name, system_prompt, context, history):
+        if "bsc" in llm_name:
+            messages = []
+            prepended = False
+            for q, a in history:
+                if len(a) == 0:  # the last message
+                    q = system_prompt + " Context: " + context + " " + q
+                messages.append({
+                    "role": "user",
+                    "content": q,
+                })
+                if len(a) != 0:  # some of the previous LLM answers
+                    messages.append({
+                        "role": "assistant",
+                        "content": a,
+                    })
+        else:
+            messages = [
             {
                 "role": "system",
                 "content": system_prompt,
             },
-        ]
-        for q, a in history:
-            if len(a) == 0:  # the last message
+            ]
+            for q, a in history:
+                if len(a) == 0:  # the last message
+                    messages.append({
+                        "role": "system",
+                        "content": context,
+                    })
                 messages.append({
-                    "role": "system",
-                    "content": context,
+                    "role": "user",
+                    "content": q,
                 })
-            messages.append({
-                "role": "user",
-                "content": q,
-            })
-            if len(a) != 0:  # some of the previous LLM answers
-                messages.append({
-                    "role": "assistant",
-                    "content": a,
-                })
-        # else:
-        #     raise ValueError(f"Unknown LLM Backend {llm_backend}")
+                if len(a) != 0:  # some of the previous LLM answers
+                    messages.append({
+                        "role": "assistant",
+                        "content": a,
+                    })
         return messages
 
 

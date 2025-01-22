@@ -139,6 +139,7 @@ class ChatGptInteractor:
         self.generate_kwargs.update(params)
 
     def _request(self, messages):
+        openai.api_base = "https://api.openai.com/v1"
         for _ in range(5):
             try:
                 completion = openai.ChatCompletion.create(

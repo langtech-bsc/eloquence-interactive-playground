@@ -22,10 +22,7 @@ class BSCInteractor:
             "top_p": top_p
         }
         self.stream = stream
-        self.tokenizer = tiktoken.encoding_for_model(self.model_name)
-        self.client = openai.OpenAI (
-            base_url=self.api_endpoint
-        )
+        # self.tokenizer = tiktoken.encoding_for_model(self.model_name)
 
     def chat_completion_simple(
             self,
@@ -44,10 +41,11 @@ class BSCInteractor:
     def _construct_messages_simple(user_text, system_text=None):
         messages = []
         if system_text is not None:
-            messages.append({
-                "role": "system",
-                "content": system_text
-            })
+            # messages.append({
+            #    "role": "system",
+            #    "content": system_text
+            #})
+            user_text = system_text + " " + user_text
         messages.append({
             "role": "user",
             "content": user_text
@@ -89,11 +87,18 @@ class BSCInteractor:
         self.generate_kwargs.update(params)
 
     def _request(self, messages):
+        openai.api_base = self.api_endpoint
         for _ in range(5):
             try:
-                completion = self.client.chat.comppletions.create(
-                    model="tgi",
+                if "8082" in self.api_endpoint:
+                    model = "tgi"
+                elif "8086" in self.api_endpoint:
+                    model = "EuroLLM-9B-Instruct"
+                else:
+                    model = "OLMo-7B-Instruct-hf"
+                completion = openai.ChatCompletion.create(
                     messages=messages,
+                    model=model,
                     stream=self.stream,
                     request_timeout=100.0,
                     **self.generate_kwargs

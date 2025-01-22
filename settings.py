@@ -1,5 +1,5 @@
 MARKDOWN_SOURCE_DIR = "data/transformers/docs/source/en/"
-LANCEDB_DIRECTORY = "lancedb"
+LANCEDB_DIRECTORY = "/app/eloquence-playground/lancedb"
 LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
@@ -30,6 +30,9 @@ LLM_CONTEXT_LENGHTS = {
     "mistralai/Mistral-7B-Instruct-v0.1": 4096,
     "tiiuae/falcon-180B-chat": 2048,
     "meta-llama/Meta-Llama-3-8B": 2048,
+    "bsc": 2048,
+    "bsc2": 2048,
+    "bsc3": 2048,
     "GeneZC/MiniChat-3B": 4096,
     "gpt-3.5-turbo": 4096,
     "sentence-transformers/all-MiniLM-L6-v2": 128,
@@ -40,7 +43,7 @@ LLM_CONTEXT_LENGHTS = {
 INDEX_CONFIG_PATH = "configurations/indexes.json"
 PROMPTS_PATH = "configurations/prompts.json"
 TASK_CONFIG_DIR = "configurations/task_configs/"
-USER_WORKSPACES = "workspaces"
+USER_WORKSPACES = "/app/eloquence-playground/workspaces"
 SQL_DB = "ip.db"
 
 CSS = """

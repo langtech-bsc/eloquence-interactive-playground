@@ -15,6 +15,8 @@ COPY . .
 EXPOSE 7860
 ENV GRADIO_SERVER_NAME="0.0.0.0"
 ENV LLM_BACKEND="bsc"
-ENV OPENAI_API_ENDPOINT_URL="http://172.17.0.1:8081/v1"
+ENV OPENAI_API_ENDPOINT_URL="http://localhost:8082/v1"
+ENV OPENAI_API_ENDPOINT_URL_2="http://localhost:8095/v1"
+ENV OPENAI_API_ENDPOINT_URL_3="http://localhost:8086/v1"
 
-CMD ["python", "-m", "gradio_app.app"]
+CMD ["bash", "run_script.sh"]

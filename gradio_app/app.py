@@ -112,7 +112,7 @@ def transcribe(filepath):
 
 
 def _get_historical_prompts():
-    history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
+    history_path = os.path.join(USER_WORKSPACES, "history.json")
     logs = []
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
@@ -157,7 +157,7 @@ def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, ta
 
 
 def load_history(name, orig_history, orig_prompt):
-    history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
+    history_path = os.path.join(USER_WORKSPACES, "history.json")
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
             logs = json.load(fd)
@@ -180,7 +180,7 @@ def load_task(task_config):
         return gr.update(visible=True), gr.update(visible=False)
 
 def store_history(history, prompt):
-    history_path = os.path.join(USER_WORKSPACES, "vojta", "history.json")
+    history_path = os.path.join(USER_WORKSPACES, "history.json")
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
             logs = json.load(fd)
@@ -297,15 +297,17 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
             )
             llm_name = gr.Radio(
                 choices=[
-                    "gpt-3.5-turbo",
-                    "meta-llama/Meta-Llama-3-8B",
+                    ("gpt-3.5-turbo", "gpt-3.5-turbo"),
+                    ("BSC (Mistral-7B)", "bsc"),
+                    ("BSC (OLMo-7B)", "bsc2"),
+                    ("BSC (EuroLLM-9B)", "bsc3"),
                 ],
                 value="gpt-3.5-turbo",
                 label='LLM'
             )
         with gr.Column():
             system_prompt = gr.Textbox(
-                value="Enter prompt...",
+                value="",
                 label="System Prompt"
             )
             selected_prompt = gr.Dropdown(
@@ -353,5 +355,5 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 demo.queue()
-demo.launch(debug=True)
-# demo.launch(debug=True, auth=authenticate)
+# demo.launch(debug=True)
+demo.launch(debug=True, auth=authenticate)
