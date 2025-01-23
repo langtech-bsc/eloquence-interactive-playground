@@ -9,6 +9,7 @@ import logging
 import os
 import json
 import sqlite3
+import shutil
 import datetime
 
 import gradio as gr
@@ -194,20 +195,15 @@ def prepare_download_history(request: gr.Request, history_name):
     if len(history) > 0:
         dwnl_path = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history_download.json")
         with open(dwnl_path, "wt") as fd:
-            json.dump(history[0], fd)
-        return gr.DownloadButton(
-                    label="Download history",
-                    value=dwnl_path,
-                    scale=0,
-                    visible=True,
-                )
+            json.dump(history[0], fd, indent=4)
+        return gr.update(interactive=True, value=dwnl_path)
     else:
         return gr.update()
     
 
 
 def reset_space():
-    return "", "", ""
+    return "", "", "", ""
 
 
 def load_task(task_config):
@@ -229,6 +225,56 @@ def store_history(request:gr.Request, history, prompt):
     with open(history_path, "wt") as fd:
         json.dump(logs, fd)
     gr.Info(f"History Saved for '{request.username}'")
+
+
+def upload_run_data(request: gr.Request, upload_file, history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
+    gr.Info("Uploading File")
+    upload_folder = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "uploads")
+    os.makedirs(upload_folder, exist_ok=True)
+    shutil.copy(upload_file, upload_folder)
+    gr.Info("File Uploaded")
+    with open(os.path.join(upload_folder, upload_file), "rt") as fd:
+        data = json.load(fd)
+        processed_data = {}
+        for conv_id, user_turns in data.items():
+            processed_turns = []
+            contexts = []
+            for turn in user_turns:
+                for (partial_history,
+                     context_html, 
+                     gr_rag_update,
+                     gr_textbox,
+                     docs) in interact(history, turn, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
+                    yield (partial_history,
+                           context_html,
+                           gr_rag_update,
+                           gr_textbox,
+                           gr.update())
+                contexts.append(docs)
+            processed_data[conv_id] = [{"user": exchage[0],
+                                        "LLM": exchage[1],
+                                        "retrieved": context} for exchage, context in zip(partial_history, contexts)]
+            history = []  
+            gr.Info(f"Conversation {conv_id} finished!")
+        dwnl_path = os.path.join(upload_folder, "processed_data.json")
+        with open(dwnl_path, "wt") as fd:
+            json.dump(
+                {"config": {
+                    "task": task_config,
+                    "top_k": top_k,
+                    "top_p": top_p,
+                    "max_tokens": max_tokens,
+                    "LLM": llm_name,
+                    "System prompt": system_prompt
+                },
+                "transcript": processed_data}, fd, indent=4)
+
+        yield ([],
+                "",
+                gr_rag_update,
+                gr_textbox,
+                gr.update(interactive=True, value=dwnl_path))
+
 
 
 def interact(history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
@@ -260,9 +306,10 @@ def interact(history, input_text, audio_input, llm_name, top_k, temp, top_p, max
     for part in llm_handler(llm_name, system_prompt, history, documents, temperature=temp, top_p=top_p, max_tokens=max_tokens):
         history[-1][1] += part
         yield (history,
-               context_html, 
+               context_html,
                gr.update(visible=task_config["RAG"] == True),
-               gr.Textbox(value="", interactive=False))
+               gr.Textbox(value="", interactive=False),
+               documents_html)
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     with gr.Row():
@@ -368,7 +415,15 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
                     label="Download history",
                     value=None,
                     scale=0,
-                    visible=False,
+                    interactive=False,
+                )
+            with gr.Row():
+                upload_data_btt = gr.UploadButton("Upload & run from data...")
+                download_result_btn = gr.DownloadButton(
+                    label="Download processed data",
+                    value=None,
+                    scale=0,
+                    interactive=False,
                 )
 
 
@@ -381,8 +436,16 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
     task_config.change(load_task, [task_config], [text_column, audio_column])
     save_btn.click(store_history, [chatbot, system_prompt], [])
-    clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt])
+    clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, context_html])
     save_prompt_btn.click(save_prompt, [system_prompt], [])
+    upload_data_btt.upload(upload_run_data,
+                           [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+                           [chatbot, context_html, rag_column, input_textbox, download_result_btn])
+    # .then(
+    #         lambda fn: gr.Textbox(label="Uploaded Document",
+    #                             visible=True,
+    #                             interactive=False,
+    #                             value=fn.split("/")[-1]),
     # Turn off interactivity while generating if you click
     txt_msg = txt_btn.click(
         validate, [input_textbox, audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
