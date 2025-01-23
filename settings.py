@@ -1,5 +1,6 @@
 MARKDOWN_SOURCE_DIR = "data/transformers/docs/source/en/"
-LANCEDB_DIRECTORY = "/app/eloquence-playground/lancedb"
+DATA_ROOT = "./app"
+LANCEDB_DIRECTORY = f"{DATA_ROOT}/eloquence-playground/lancedb"
 LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
@@ -43,7 +44,7 @@ LLM_CONTEXT_LENGHTS = {
 INDEX_CONFIG_PATH = "configurations/indexes.json"
 PROMPTS_PATH = "configurations/prompts.json"
 TASK_CONFIG_DIR = "configurations/task_configs/"
-USER_WORKSPACES = "/app/eloquence-playground/workspaces"
+USER_WORKSPACES = f"{DATA_ROOT}/eloquence-playground/workspaces"
 SQL_DB = "ip.db"
 
 CSS = """

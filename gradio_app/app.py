@@ -61,8 +61,8 @@ def toggle_sidebar(state):
 
 
 
-def get_dynamic_fields(selected_logs):
-    return _get_tables(), _get_configs(), _get_prompts(), _get_historical_prompts()
+def get_dynamic_fields(request: gr.Request, selected_logs):
+    return _get_tables(), _get_configs(), _get_prompts(request.username), _get_historical_prompts(request.username)
 
 
 def _get_tables():
@@ -72,13 +72,29 @@ def _get_tables():
     )
 
 
-def _get_prompts():
-    with open(os.path.join(PROMPTS_PATH), "rt") as fd:
-        prompts = json.load(fd)
+def _get_prompts(user):
+    prompts_path = os.path.join(USER_WORKSPACES, user if user is not None else "anonymous", "prompts.json")
+    prompts = []
+    if os.path.exists(prompts_path):
+        with open(prompts_path, "rt") as fd:
+            prompts = json.load(fd)
     return gr.Dropdown(
         label="Prompt",
         choices=[(p["name"], p["prompt"]) for p in prompts]
     )
+
+
+def save_prompt(request: gr.Request, prompt):
+    prompts_path = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "prompts.json")
+    os.makedirs(os.path.dirname(prompts_path), exist_ok=True)
+    prompts = []
+    if os.path.exists(prompts_path):
+        with open(prompts_path, "rt") as fd:
+            prompts = json.load(fd)
+    prompts.append({"name": f"{prompt[:15]}...", "prompt": prompt})
+    with open(prompts_path, "wt") as fd:
+        json.dump(prompts, fd, indent=4)
+    gr.Info("Prompt saved successfully!")
 
 
 def _get_configs():
@@ -111,8 +127,8 @@ def transcribe(filepath):
 
 
 
-def _get_historical_prompts():
-    history_path = os.path.join(USER_WORKSPACES, "history.json")
+def _get_historical_prompts(user):
+    history_path = os.path.join(USER_WORKSPACES, user if user is not None else "anonymous", "history.json")
     logs = []
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
@@ -141,14 +157,14 @@ def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, ta
         if not bmin <= val <= bmax:
             return False
         return True
-    
+
     if not _check_float(top_k, 0, 10):
         raise gr.Error("Accepted values for K are integers in range [0, 10]")
     if not _check_float(temp, 0, 2):
         raise gr.Error("Accepted values for Temperature are decimals in range [0, 2]")
     if not _check_float(top_p, 0, 1):
         raise gr.Error("Accepted values for Top-p are floats in range [0, 1]")
-    
+
     if not task_config:
         raise gr.Error("Task configuration isn't selected")
     task_config = json.loads(task_config)
@@ -156,16 +172,38 @@ def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, ta
         raise gr.Error("Index required and not selected")
 
 
-def load_history(name, orig_history, orig_prompt):
-    history_path = os.path.join(USER_WORKSPACES, "history.json")
+def _get_history_from_file(user, history_name):
+    history_path = os.path.join(USER_WORKSPACES, user if user is not None else "anonymous", "history.json")
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
             logs = json.load(fd)
-    log = [l for l in logs if l["name"] == name]
-    if len(log) > 0:
-        return log[0]["history"], log[0]["prompt"]
+    history = [l for l in logs if l["name"] == history_name]
+    return history
+
+
+def load_history(request: gr.Request, history_name, orig_history, orig_prompt):
+    history = _get_history_from_file(request.username, history_name)
+    if len(history) > 0:
+        return history[0]["history"], history[0]["prompt"]
     else:
         return orig_history, orig_prompt
+
+
+def prepare_download_history(request: gr.Request, history_name):
+    history = _get_history_from_file(request.username, history_name)
+    if len(history) > 0:
+        dwnl_path = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history_download.json")
+        with open(dwnl_path, "wt") as fd:
+            json.dump(history[0], fd)
+        return gr.DownloadButton(
+                    label="Download history",
+                    value=dwnl_path,
+                    scale=0,
+                    visible=True,
+                )
+    else:
+        return gr.update()
+    
 
 
 def reset_space():
@@ -179,17 +217,18 @@ def load_task(task_config):
     else:
         return gr.update(visible=True), gr.update(visible=False)
 
-def store_history(history, prompt):
-    history_path = os.path.join(USER_WORKSPACES, "history.json")
+def store_history(request:gr.Request, history, prompt):
+    history_path = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history.json")
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
             logs = json.load(fd)
     else:
         logs = []
+        os.makedirs(os.path.dirname(history_path), exist_ok=True)
     logs.append({"history": history, "prompt": prompt, "name": f"{datetime.date.today()}-{prompt[:10]}..."})
     with open(history_path, "wt") as fd:
         json.dump(logs, fd)
-    gr.Info("History Saved")
+    gr.Info(f"History Saved for '{request.username}'")
 
 
 def interact(history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
@@ -267,10 +306,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
 
             with gr.Row():
                 gr.Examples(examples, input_textbox)
-        
+
         with gr.Column(visible=False, scale=0) as rag_column:
             context_html = gr.HTML()
-    
+
     with gr.Row():
         with gr.Column():
             top_k = gr.Number(
@@ -313,6 +352,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
             selected_prompt = gr.Dropdown(
                 choices=[]
             )
+            save_prompt_btn = gr.Button(
+                value="Save prompt",
+                scale=0
+            )
             with gr.Row():
                 selected_logs = gr.Dropdown(
                     choices=[]
@@ -321,6 +364,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
                     value="Load history",
                     scale=0
                 )
+                download_btn = gr.DownloadButton(
+                    label="Download history",
+                    value=None,
+                    scale=0,
+                    visible=False,
+                )
 
 
     demo.load(
@@ -328,10 +377,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     )
 
     selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
+    selected_logs.change(prepare_download_history, [selected_logs], [download_btn])
     select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
     task_config.change(load_task, [task_config], [text_column, audio_column])
     save_btn.click(store_history, [chatbot, system_prompt], [])
     clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt])
+    save_prompt_btn.click(save_prompt, [system_prompt], [])
     # Turn off interactivity while generating if you click
     txt_msg = txt_btn.click(
         validate, [input_textbox, audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
@@ -355,5 +406,5 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 demo.queue()
-# demo.launch(debug=True)
-demo.launch(debug=True, auth=authenticate)
+demo.launch(debug=True)
+# demo.launch(debug=True, auth=authenticate)
