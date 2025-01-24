@@ -11,6 +11,7 @@ import json
 import sqlite3
 import shutil
 import datetime
+import time
 
 import gradio as gr
 import markdown
@@ -203,7 +204,7 @@ def prepare_download_history(request: gr.Request, history_name):
 
 
 def reset_space():
-    return "", "", "", ""
+    return "", "", "", gr.update(visible=False)
 
 
 def load_task(task_config):
@@ -227,17 +228,17 @@ def store_history(request:gr.Request, history, prompt):
     gr.Info(f"History Saved for '{request.username}'")
 
 
-def upload_run_data(request: gr.Request, upload_file, history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
+def upload_run_data(request: gr.Request, upload_file, history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, progress=gr.Progress()):
     gr.Info("Uploading File")
     upload_folder = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "uploads")
     os.makedirs(upload_folder, exist_ok=True)
     shutil.copy(upload_file, upload_folder)
     gr.Info("File Uploaded")
+    gr.Info(upload_file)
     with open(os.path.join(upload_folder, upload_file), "rt") as fd:
         data = json.load(fd)
         processed_data = {}
-        for conv_id, user_turns in data.items():
-            processed_turns = []
+        for num, (conv_id, user_turns) in progress.tqdm(enumerate(data.items()), total=len(data)):
             contexts = []
             for turn in user_turns:
                 for (partial_history,
@@ -248,14 +249,15 @@ def upload_run_data(request: gr.Request, upload_file, history, input_text, audio
                     yield (partial_history,
                            context_html,
                            gr_rag_update,
-                           gr_textbox,
-                           gr.update())
+                           gr.update()
+                           )
                 contexts.append(docs)
+            time.sleep(.5)
             processed_data[conv_id] = [{"user": exchage[0],
                                         "LLM": exchage[1],
                                         "retrieved": context} for exchage, context in zip(partial_history, contexts)]
-            history = []  
-            gr.Info(f"Conversation {conv_id} finished!")
+            history = []
+            gr.Info(f"Conversation {num+1}/{len(data)} [{conv_id}] finished!")
         dwnl_path = os.path.join(upload_folder, "processed_data.json")
         with open(dwnl_path, "wt") as fd:
             json.dump(
@@ -271,9 +273,9 @@ def upload_run_data(request: gr.Request, upload_file, history, input_text, audio
 
         yield ([],
                 "",
-                gr_rag_update,
-                gr_textbox,
-                gr.update(interactive=True, value=dwnl_path))
+                gr.update(visible=False),
+                gr.update(interactive=True, value=dwnl_path),
+                )
 
 
 
@@ -309,7 +311,8 @@ def interact(history, input_text, audio_input, llm_name, top_k, temp, top_p, max
                context_html,
                gr.update(visible=task_config["RAG"] == True),
                gr.Textbox(value="", interactive=False),
-               documents_html)
+               documents_html,
+               )
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     with gr.Row():
@@ -326,7 +329,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
                 label="EloquenceBot",
                 # autoscroll=True,
             )
-
             with gr.Row(equal_height=True):
                 with gr.Column(visible=True) as text_column:
                     input_textbox = gr.Textbox(
@@ -436,11 +438,15 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
     task_config.change(load_task, [task_config], [text_column, audio_column])
     save_btn.click(store_history, [chatbot, system_prompt], [])
-    clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, context_html])
+    clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, rag_column])
     save_prompt_btn.click(save_prompt, [system_prompt], [])
-    upload_data_btt.upload(upload_run_data,
-                           [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
-                           [chatbot, context_html, rag_column, input_textbox, download_result_btn])
+    upload_data_btt.upload(
+        validate, [gr.Textbox("dummy"), audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
+    ).success(
+        upload_run_data,
+        [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+        [chatbot, context_html, rag_column, download_result_btn]
+    )
     # .then(
     #         lambda fn: gr.Textbox(label="Uploaded Document",
     #                             visible=True,
