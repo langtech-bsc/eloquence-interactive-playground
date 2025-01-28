@@ -1,3 +1,6 @@
 {
-    "Eloquence": "sentence-transformers/all-MiniLM-L6-v2"
+    "Eloquence": "sentence-transformers/all-MiniLM-L6-v2",
+    "test-tsv": "sentence-transformers/all-mpnet-base-v2",
+    "test-semantic": "sentence-transformers/all-mpnet-base-v2",
+    "test-semantic-2": "sentence-transformers/all-mpnet-base-v2"
 }

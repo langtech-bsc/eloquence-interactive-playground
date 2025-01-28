@@ -18,7 +18,7 @@ class LanceDBRetriever:
             self.emb_cache[embedding_type] = embedder
 
         table = self.db.open_table(index_name)
-        query_vec = embedder.embed([query])[0]
+        query_vec = embedder.embed_query(query)
         documents = table.search(query_vec, vector_column_name=VECTOR_COLUMN_NAME)
         documents = documents.limit(top_k).to_list()
         if self.threshold:

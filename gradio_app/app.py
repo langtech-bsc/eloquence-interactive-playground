@@ -441,7 +441,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, rag_column])
     save_prompt_btn.click(save_prompt, [system_prompt], [])
     upload_data_btt.upload(
-        validate, [gr.Textbox("dummy"), audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
+        validate, [gr.Textbox("dummy", visible=False), audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
     ).success(
         upload_run_data,
         [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],

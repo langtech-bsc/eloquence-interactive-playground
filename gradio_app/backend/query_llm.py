@@ -31,6 +31,7 @@ class LLMHandler:
 
     @staticmethod
     def build_messages(documents, history, llm, system_prompt):
+        context = ""
         while len(documents) != 0:
             context = context_template.render(documents=documents)
             messages = LLMHandler.construct_message_list(llm, system_prompt, context, history)

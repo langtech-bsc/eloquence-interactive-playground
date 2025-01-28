@@ -1,7 +1,9 @@
+from abc import ABC, abstractmethod
+
 import torch
 import openai
 from sentence_transformers import SentenceTransformer
-from abc import ABC, abstractmethod
+from langchain_huggingface import HuggingFaceEmbeddings
 
 
 class Embedder(ABC):
@@ -32,12 +34,11 @@ class OpenAIEmbedder(Embedder):
 
 class EmbedderFactory:
     @staticmethod
-    def get_embedder(type):
-        if type == "sentence-transformers/all-MiniLM-L6-v2":
-            return HfEmbedder(type)
-        elif type == "text-embedding-ada-002":
-            return OpenAIEmbedder(type)
+    def get_embedder(model):
+        if model in ["sentence-transformers/all-MiniLM-L6-v2", "sentence-transformers/all-mpnet-base-v2"]:
+            print(model)
+            return HuggingFaceEmbeddings(model_name=model)
         else:
-            raise ValueError(f"Unsupported embedder type: {type}")
+            raise ValueError(f"Unsupported embedding model: {model}")
 
 

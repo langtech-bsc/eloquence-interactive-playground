@@ -6,20 +6,13 @@ VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
 DOCUMENT_PATH_COLUMN_NAME = "document_path"
 
-EMBED_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-EMBEDDERS = [
-    "sentence-transformers/all-MiniLM-L6-v2",
-    "text-embedding-ada-002",
-]
-# EMBED_NAME = "text-embedding-ada-002"
-
 TOP_K_RANK = 50
 TOP_K_RERANK = 5
 
 EMBEDDING_SIZES = {
     "sentence-transformers/all-MiniLM-L6-v2": 384,
-    "thenlper/gte-large": 1024,
-    "text-embedding-ada-002": 1536,
+    "sentence-transformers/all-mpnet-base-v2": 768,
+    # "text-embedding-ada-002": 1536,
 }
 
 THRESHOLD_DISTANCES = {
@@ -45,6 +38,7 @@ INDEX_CONFIG_PATH = "configurations/indexes.json"
 PROMPTS_PATH = "configurations/prompts.json"
 TASK_CONFIG_DIR = "configurations/task_configs/"
 USER_WORKSPACES = f"{DATA_ROOT}/eloquence-playground/workspaces"
+GENERIC_UPLOAD = f"uploads"
 SQL_DB = "ip.db"
 
 CSS = """
@@ -98,5 +92,9 @@ div.svelte-sa48pu>.form>* {
     color: white !important;
     background: #f27618 !important;
     border-radius: 6px;
+}
+.description {
+    color: #999999;
+    font-family: "Lucida Console", "Courier New", monospace;
 }
 """
