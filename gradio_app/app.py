@@ -371,6 +371,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
             )
             top_p = gr.Number(
                 value=0.95,
+                precision=2,
                 label="Top p",
             )
             max_tokens = gr.Number(

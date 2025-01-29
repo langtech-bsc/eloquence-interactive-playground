@@ -37,7 +37,7 @@ def get_doc_loader(file_path):
     else:
         raise NotImplementedError(f"Unknown extension {extension}")
 
-def run_ingest(file_paths, chunk_size, embed_name, table_name, splitting_strategy):
+def run_ingest(file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy):
     db = lancedb.connect(LANCEDB_DIRECTORY)
     batch_size = 128
 
@@ -54,7 +54,7 @@ def run_ingest(file_paths, chunk_size, embed_name, table_name, splitting_strateg
     elif splitting_strategy == "recursive":
         splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size)
     else:
-        splitter = SemanticChunker(embedder)
+        splitter = SemanticChunker(embedder, breakpoint_threshold_type="percentile", breakpoint_threshold_amount=float(percentile))
     time_embed, time_ingest = [], []
 
     for file_path in file_paths:

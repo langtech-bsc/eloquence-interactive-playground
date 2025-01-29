@@ -43,34 +43,52 @@ def upload_file(file_paths):
     return gr.update(value=", ".join(out))
 
 
-def perform_ingest(index_name, chunk_size, embed_name, file_paths, splitting_strategy):
+def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, splitting_strategy):
     if file_paths is None or len(file_paths) == 0:
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
-    run_ingest([os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths], chunk_size, embed_name, index_name, splitting_strategy)
+    run_ingest([os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths], chunk_size, percentile, embed_name, index_name, splitting_strategy)
     gr.Info("Ingestion Done!")
 
 
-def validate(index_name, embedder, uploaded_files):
+def validate(index_name, embedder, uploaded_files, chunk_length, percentile):
     if index_name is None or len(index_name) == 0:
         raise gr.Error("Please fill the index name.")
     if embedder is None or len(embedder) == 0:
         raise gr.Error("Please select an embedder.")
     if uploaded_files is None or len(uploaded_files) == 0:
         raise gr.Error("Please select at least one file.")
+    for uf in uploaded_files:
+        uf = os.path.basename(uf)
+        if not any([uf.endswith(suff) for suff in supported_file_types]):
+            raise gr.Error(f"File '{uf}': filetype not supported!")
+    try:
+        chunk_length = int(chunk_length)
+        if not 0 < chunk_length < 1000:
+            raise ValueError()
+    except:
+        raise gr.Error("'Chunk Length' must be an integer between '0' and '1000'")
+    try:
+        percentile = int(percentile)
+        if not 0 < percentile < 100:
+            raise ValueError()
+    except:
+        raise gr.Error("'Percentile' must be an integer between '0' and '100'")
 
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
     with gr.Blocks():
         with gr.Row():
             index_name = gr.Textbox(label="Index Name")
-            chunk_size = gr.Number(label="Chunk length", value=500, scale=0)
+            chunk_length = gr.Number(label="Chunk length (char-based)", value=500, scale=0)
+            percentile = gr.Number(label="Percentile thr (sem-based)", value=95, precision=0, scale=0)
             splitting_strategy = gr.Radio(
                 label="Splitting strategy",
                 choices=[("By-Length (simple)", "simple"),
                          ("By-Length (recursive)", "recursive"),
                          ("Semantic", "semantic")],
-                value="recursive"
+                value="recursive",
+                scale=1
             )
         with gr.Row():
             embed_name = gr.Radio(
@@ -93,7 +111,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
         
 
     upload_btt.upload(upload_file, [upload_btt], [uploaded_doc])
-    run_ingestion.click(validate, [index_name, embed_name, upload_btt]
+    run_ingestion.click(validate, [index_name, embed_name, upload_btt, chunk_length, percentile]
                         ).success(
                             lambda: gr.Textbox(interactive=False,
                                                visible=True,
@@ -104,7 +122,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
                             [ingestion_in_progress]
                         ).then(
                             perform_ingest,
-                            [index_name, chunk_size, embed_name, upload_btt, splitting_strategy]
+                            [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy]
                         ).then(
                             lambda: gr.Textbox(visible=False),
                             [],
