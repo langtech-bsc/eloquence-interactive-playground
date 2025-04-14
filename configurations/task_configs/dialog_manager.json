@@ -1,0 +1,6 @@
+{
+    "name": "Dialogue Manager",
+    "RAG": false,
+    "interface": "text",
+    "service": "remote-http://127.0.0.1:8080/respond"
+}
