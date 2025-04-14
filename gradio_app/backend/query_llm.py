@@ -22,26 +22,29 @@ class LLMHandler:
     
     def __call__(self, llm_name, system_prompt, history, documents, **params):
         llm = self._cache.get(llm_name, None)
+        audio = None
+        if "audio" in params and params["audio"] is not None:
+            audio = params["audio"]
         if llm is None:
             llm = LLMHandler.get_llm_generator(llm_name)
             self._cache[llm_name] = llm
         llm.set_params(**params)
-        messages = LLMHandler.build_messages(documents, history, llm_name, system_prompt)
+        messages = LLMHandler.build_messages(documents, history, llm_name, system_prompt, audio)
         repsonse = llm(messages)
         return repsonse
 
 
     @staticmethod
-    def build_messages(documents, history, llm, system_prompt):
+    def build_messages(documents, history, llm, system_prompt, audio=None):
         context = ""
         while len(documents) > 0:
             context = context_template.render(documents=documents)
-            messages = LLMHandler.construct_message_list(llm, system_prompt, context, history)
+            messages = LLMHandler.construct_message_list(llm, system_prompt, context, history, audio)
             num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
             if num_tokens + 512 < LLM_CONTEXT_LENGHTS[llm]:
                 break
             documents.pop()
-        messages = LLMHandler.construct_message_list(llm, system_prompt, context, history)
+        messages = LLMHandler.construct_message_list(llm, system_prompt, context, history, audio)
         return messages
         
         
@@ -73,17 +76,36 @@ class LLMHandler:
         raise ValueError('Unknown LLM name')
     
     @staticmethod
-    def construct_message_list(llm_name, system_prompt, context, history):
+    def construct_message_list(llm_name, system_prompt, context, history, audio=None):
         if "bsc" in llm_name:
             messages = []
             prepended = False
             for q, a in history:
                 if len(a) == 0:  # the last message
                     q = system_prompt + " Context: " + context + " " + q
-                messages.append({
-                    "role": "user",
-                    "content": q,
-                })
+                if audio is None:
+                    messages.append({
+                        "role": "user",
+                        "content": q,
+                    })
+                else:
+                    messages.append({
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": q
+                            },
+                            {
+                                "type": "input_audio",
+                                "input_audio": {
+                                    "data": audio,
+                                    "format": "wav"
+                                }
+                            }
+                        ]
+
+                    })
                 if len(a) != 0:  # some of the previous LLM answers
                     messages.append({
                         "role": "assistant",
@@ -91,10 +113,10 @@ class LLMHandler:
                     })
         else:
             messages = [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                }
             ]
             for q, a in history:
                 if len(a) == 0:  # the last message
@@ -110,7 +132,7 @@ class LLMHandler:
                     messages.append({
                         "role": "assistant",
                         "content": a,
-                    })
+                    }) 
         return messages
 
 

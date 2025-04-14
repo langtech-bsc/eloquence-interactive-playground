@@ -13,6 +13,7 @@ import shutil
 import datetime
 import time
 import re
+import base64
 
 import gradio as gr
 import markdown
@@ -120,6 +121,13 @@ def replace_doc_links(text):
         return f'<a href="{url}" onmouseover="document.getElementById(\'doc_{doc_id}\').style=\'border: 2px solid white;background:#f27618\'; display: block;" onmouseout="document.getElementById(\'doc_{doc_id}\').style=\'border: 1px solid white; background: none; display:none;\'" >[{doc_id}]</a>'
     
     rep = re.sub(r"\[doc ?(\d+)\]", repl, text)
+    rep = re.sub(r"\[document ?(\d+)\]", repl, text)
+    rep = re.sub(r"\(doc ?(\d+)\)", repl, text)
+    rep = re.sub(r"\(document ?(\d+)\)", repl, text)
+    rep = re.sub(r"document ?(\d+)", repl, text)
+    rep = re.sub(r"document no. ?(\d+)", repl, text)
+    rep = re.sub(r"Document no. ?(\d+)", repl, text)
+
     return rep
 
 
@@ -179,17 +187,19 @@ def _get_configs():
 
 def transcribe(filepath):
     try:
-        output = pipe(
-            filepath,
-            max_new_tokens=256,
-            generate_kwargs={
-                "task": "transcribe",
-                "language": "english",
-            },  # update with the language you've fine-tuned on
-            chunk_length_s=30,
-            batch_size=8,
-        )
-        return output["text"]
+        with open(filepath, "rb") as fd:
+            audio = fd.read()
+        # output = pipe(
+        #     filepath,
+        #     max_new_tokens=256,
+        #     generate_kwargs={
+        #         "task": "transcribe",
+        #         "language": "english",
+        #     },  # update with the language you've fine-tuned on
+        #     chunk_length_s=30,
+        #     batch_size=8,
+        # )
+        return base64.b64encode(audio).decode("utf-8")
     except:
         return ""
 
@@ -349,8 +359,10 @@ def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, ma
     task_handler = get_task_handler(task_config, llm_handler, retriever)
     history = [] if history is None else history
     history_user_entry = None
+    audio_in = None
     if task_config["interface"] == "audio":
-        query = audio_input
+        audio_in = audio_input
+        query = ""
         history_user_entry = query
     else:
         history_user_entry = input_text
@@ -370,7 +382,8 @@ def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, ma
                                         index_name,
                                         temperature=temp,
                                         top_p=top_p,
-                                        max_tokens=max_tokens):
+                                        max_tokens=max_tokens,
+                                        audio=audio_in):
         history[-1][1] += part
         history[-1][1] = replace_doc_links(history[-1][1])
         documents_html = [markdown.markdown(d) for d in documents]
@@ -462,7 +475,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
                         )
                     with gr.Column(visible=False) as audio_column:
                         audio_input = gr.Textbox(
-                            visible=True
+                            visible=False
                         )
                         mic_transcribe = gr.Interface(
                             fn=transcribe,
@@ -512,7 +525,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
                     choices=[
                         ("gpt-3.5-turbo", "gpt-3.5-turbo"),
                         ("BSC (Salamandra-7B)", "bsc"),
-                        # ("BSC (Salamandra-7B)", "bsc2"),
+                        ("BSC (Audio-Qwen-7B)", "bsc2"),
                         # ("BSC (EuroLLM-9B)", "bsc3"),
                     ],
                     value="gpt-3.5-turbo",
