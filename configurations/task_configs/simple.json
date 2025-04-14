@@ -1,5 +1,6 @@
 {
     "name": "Basic LLM",
     "RAG": false,
-    "interface": "text"
+    "interface": "text",
+    "service": "local"
 }

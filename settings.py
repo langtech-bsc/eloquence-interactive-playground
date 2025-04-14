@@ -8,6 +8,7 @@ DOCUMENT_PATH_COLUMN_NAME = "document_path"
 
 TOP_K_RANK = 50
 TOP_K_RERANK = 5
+SUPPORTED_FILE_TYPES = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
 
 EMBEDDING_SIZES = {
     "sentence-transformers/all-MiniLM-L6-v2": 384,

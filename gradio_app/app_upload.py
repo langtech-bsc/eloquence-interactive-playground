@@ -6,7 +6,6 @@ Credit to Derek Thomas, derek@huggingface.co
 # subprocess.run(["pip", "install", "--upgrade", "transformers[torch,sentencepiece]==4.34.1"])
 
 import logging
-from time import perf_counter
 
 import gradio as gr
 import os
@@ -14,7 +13,7 @@ import shutil
 import lancedb
 from jinja2 import Environment, FileSystemLoader
 
-from prep_scripts.lancedb_setup import run_ingest, supported_file_types
+from retrievers.retrievers import LanceDBRetriever
 
 from settings import *
 
@@ -28,8 +27,9 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 # Load the templates directly from the environment
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
-
 db = lancedb.connect(LANCEDB_DIRECTORY)
+retriever = LanceDBRetriever(db, threshold=None)
+
 
 def upload_file(file_paths):
     out = []
@@ -47,7 +47,13 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
     if file_paths is None or len(file_paths) == 0:
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
-    run_ingest([os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths], chunk_size, percentile, embed_name, index_name, splitting_strategy)
+    retriever.create(
+        [os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths],
+        chunk_size,
+        percentile,
+        embed_name,
+        index_name,
+        splitting_strategy)
     gr.Info("Ingestion Done!")
 
 
@@ -60,7 +66,7 @@ def validate(index_name, embedder, uploaded_files, chunk_length, percentile):
         raise gr.Error("Please select at least one file.")
     for uf in uploaded_files:
         uf = os.path.basename(uf)
-        if not any([uf.endswith(suff) for suff in supported_file_types]):
+        if not any([uf.endswith(suff) for suff in SUPPORTED_FILE_TYPES]):
             raise gr.Error(f"File '{uf}': filetype not supported!")
     try:
         chunk_length = int(chunk_length)
@@ -101,10 +107,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
             ingestion_in_progress = gr.Text(visible=False)
         with gr.Row():
             upload_btt = gr.UploadButton("Select file(s) to upload...",
-                                         file_types=supported_file_types,
+                                         file_types=SUPPORTED_FILE_TYPES,
                                          file_count="multiple",
                                          scale=0)
-            supported_extensions = ", ".join([f'*.{sft}' for sft in supported_file_types])
+            supported_extensions = ", ".join([f'*.{sft}' for sft in SUPPORTED_FILE_TYPES])
             supported = gr.HTML(f"<span class='description'>Supported extensions [{supported_extensions}]</span>")
         with gr.Row():
             run_ingestion = gr.Button("Run Ingestion", scale=0)

@@ -28,7 +28,7 @@
 <body>
 <div id="context_side">
 {% for doc in documents %}
-    <div class="doc-box">
+    <div class="doc-box" id="doc_{{loop.index}}", style="display:none">
         {{ doc }}
     </div>
 {% endfor %}
