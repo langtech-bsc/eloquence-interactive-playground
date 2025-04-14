@@ -60,6 +60,58 @@ examples = [
     "Do you prefer cats or dogs?"
 ]
 
+############# FOR VS Creation #########
+def upload_file(file_paths):
+    out = []
+    for file_path in file_paths:
+        gr.Info("Uploading File")
+        os.makedirs(GENERIC_UPLOAD, exist_ok=True)
+        shutil.copy(file_path, GENERIC_UPLOAD)
+        out.append(os.path.basename(file_path))
+        gr.Info(f"File '{out[-1]}' uploaded")
+
+    return gr.update(value=", ".join(out))
+
+
+def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, splitting_strategy):
+    if file_paths is None or len(file_paths) == 0:
+        raise gr.Error("You must uplaod at least one file first")
+    gr.Info("Ingesting the documents")
+    retriever.create(
+        [os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths],
+        chunk_size,
+        percentile,
+        embed_name,
+        index_name,
+        splitting_strategy)
+    gr.Info("Ingestion Done!")
+
+
+def validate_vs(index_name, embedder, uploaded_files, chunk_length, percentile):
+    if index_name is None or len(index_name) == 0:
+        raise gr.Error("Please fill the index name.")
+    if embedder is None or len(embedder) == 0:
+        raise gr.Error("Please select an embedder.")
+    if uploaded_files is None or len(uploaded_files) == 0:
+        raise gr.Error("Please select at least one file.")
+    for uf in uploaded_files:
+        uf = os.path.basename(uf)
+        if not any([uf.endswith(suff) for suff in SUPPORTED_FILE_TYPES]):
+            raise gr.Error(f"File '{uf}': filetype not supported!")
+    try:
+        chunk_length = int(chunk_length)
+        if not 0 < chunk_length < 1000:
+            raise ValueError()
+    except:
+        raise gr.Error("'Chunk Length' must be an integer between '0' and '1000'")
+    try:
+        percentile = int(percentile)
+        if not 0 < percentile < 100:
+            raise ValueError()
+    except:
+        raise gr.Error("'Percentile' must be an integer between '0' and '100'")
+
+######## FOR PLAYGROUND ##############
 
 def replace_doc_links(text):
     def repl(match):
@@ -67,7 +119,7 @@ def replace_doc_links(text):
         url = f"#{doc_id}"
         return f'<a href="{url}" onmouseover="document.getElementById(\'doc_{doc_id}\').style=\'border: 2px solid white;background:#f27618\'; display: block;" onmouseout="document.getElementById(\'doc_{doc_id}\').style=\'border: 1px solid white; background: none; display:none;\'" >[{doc_id}]</a>'
     
-    rep = re.sub(r"\[doc (\d+)\]", repl, text)
+    rep = re.sub(r"\[doc ?(\d+)\]", repl, text)
     return rep
 
 
@@ -386,167 +438,222 @@ def save_feedback(request: gr.Request, x: gr.LikeData, chatbot, system_prompt, r
 
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
-    with gr.Row():
-        with gr.Column():
-            chatbot = gr.Chatbot(
-                [],
-                elem_id="chatbot",
-                avatar_images=('assets/user.jpeg',
-                            'assets/eloq.png'),
-                bubble_full_width=True,
-                show_copy_button=False,
-                show_share_button=False,
-                height=400,
-                label="EloquenceBot",
-                sanitize_html=False
-            )
-            with gr.Row(equal_height=True):
-                with gr.Column(visible=True) as text_column:
-                    input_textbox = gr.Textbox(
-                        scale=3,
-                        show_label=False,
-                        container=False,
-                    )
-                with gr.Column(visible=False) as audio_column:
-                    audio_input = gr.Textbox(
-                        visible=True
-                    )
-                    mic_transcribe = gr.Interface(
-                        fn=transcribe,
-                        inputs=gr.Audio(sources="microphone", type="filepath"),
-                        outputs=audio_input,
-                        allow_flagging="never",
-                        live=True
-                        # submit_btn=
-                    )
+    with gr.Tab("Playground"):
+        with gr.Row():
+            with gr.Column():
+                chatbot = gr.Chatbot(
+                    [],
+                    elem_id="chatbot",
+                    avatar_images=('assets/user.jpeg',
+                                'assets/eloq.png'),
+                    bubble_full_width=True,
+                    show_copy_button=False,
+                    show_share_button=False,
+                    height=400,
+                    label="EloquenceBot",
+                    sanitize_html=False
+                )
+                with gr.Row(equal_height=True):
+                    with gr.Column(visible=True) as text_column:
+                        input_textbox = gr.Textbox(
+                            scale=3,
+                            show_label=False,
+                            container=False,
+                        )
+                    with gr.Column(visible=False) as audio_column:
+                        audio_input = gr.Textbox(
+                            visible=True
+                        )
+                        mic_transcribe = gr.Interface(
+                            fn=transcribe,
+                            inputs=gr.Audio(sources="microphone", type="filepath"),
+                            outputs=audio_input,
+                            allow_flagging="never",
+                            live=True
+                            # submit_btn=
+                        )
 
-                txt_btn = gr.Button(value="Submit", scale=0)
-                save_btn = gr.Button(value="Save current state", scale=0)
-                clear_btn = gr.Button(value="Clear space", scale=0)
+                    txt_btn = gr.Button(value="Submit", scale=0)
+                    save_btn = gr.Button(value="Save current state", scale=0)
+                    clear_btn = gr.Button(value="Clear space", scale=0)
 
-            with gr.Row():
-                gr.Examples(examples, input_textbox)
+                with gr.Row():
+                    gr.Examples(examples, input_textbox)
 
-        with gr.Column(visible=False, scale=0) as rag_column:
-            context_html = gr.HTML()
+            with gr.Column(visible=False, scale=0) as rag_column:
+                context_html = gr.HTML()
 
-    with gr.Row():
-        with gr.Column():
-            docs_k = gr.Number(
-                value=5,
-                label="Top K documents",
-            )
-            temp = gr.Number(
-                value=1.0,
-                label="Temperature",
-            )
-            top_p = gr.Number(
-                value=0.95,
-                precision=2,
-                label="Top p",
-            )
-            max_tokens = gr.Number(
-                value=300,
-                label="Max tokens",
-            )
-            index_name = gr.Radio(
-                label="Index name",
-            )
-            task_config = gr.Radio(
-                label="Task configuration",
-            )
-            llm_name = gr.Radio(
-                choices=[
-                    ("gpt-3.5-turbo", "gpt-3.5-turbo"),
-                    ("BSC (Mistral-7B)", "bsc"),
-                    ("BSC (OLMo-7B)", "bsc2"),
-                    ("BSC (EuroLLM-9B)", "bsc3"),
-                ],
-                value="gpt-3.5-turbo",
-                label='LLM'
-            )
-        with gr.Column():
-            system_prompt = gr.Textbox(
-                value="",
-                label="System Prompt"
-            )
-            selected_prompt = gr.Dropdown(
-                choices=[]
-            )
-            save_prompt_btn = gr.Button(
-                value="Save prompt",
-                scale=0
-            )
-            with gr.Row():
-                selected_logs = gr.Dropdown(
+        with gr.Row():
+            with gr.Column():
+                docs_k = gr.Number(
+                    value=5,
+                    label="Top K documents",
+                )
+                temp = gr.Number(
+                    value=1.0,
+                    label="Temperature",
+                )
+                top_p = gr.Number(
+                    value=0.95,
+                    precision=2,
+                    label="Top p",
+                )
+                max_tokens = gr.Number(
+                    value=300,
+                    label="Max tokens",
+                )
+                index_name = gr.Radio(
+                    label="Index name",
+                )
+                task_config = gr.Radio(
+                    label="Task configuration",
+                )
+                llm_name = gr.Radio(
+                    choices=[
+                        ("gpt-3.5-turbo", "gpt-3.5-turbo"),
+                        ("BSC (Salamandra-7B)", "bsc"),
+                        # ("BSC (Salamandra-7B)", "bsc2"),
+                        # ("BSC (EuroLLM-9B)", "bsc3"),
+                    ],
+                    value="gpt-3.5-turbo",
+                    label='LLM'
+                )
+            with gr.Column():
+                system_prompt = gr.Textbox(
+                    value="",
+                    label="System Prompt"
+                )
+                selected_prompt = gr.Dropdown(
                     choices=[]
                 )
-                select_log_btn = gr.Button(
-                    value="Load history",
+                save_prompt_btn = gr.Button(
+                    value="Save prompt",
                     scale=0
                 )
-                download_btn = gr.DownloadButton(
-                    label="Download history",
-                    value=None,
-                    scale=0,
-                    interactive=False,
+                with gr.Row():
+                    selected_logs = gr.Dropdown(
+                        choices=[]
+                    )
+                    select_log_btn = gr.Button(
+                        value="Load history",
+                        scale=0
+                    )
+                    download_btn = gr.DownloadButton(
+                        label="Download history",
+                        value=None,
+                        scale=0,
+                        interactive=False,
+                    )
+                with gr.Row():
+                    upload_data_btt = gr.UploadButton("Upload & run from data...")
+                    download_result_btn = gr.DownloadButton(
+                        label="Download processed data",
+                        value=None,
+                        scale=0,
+                        interactive=False,
+                    )
+
+
+        demo.load(
+            get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs]
+        )
+
+        selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
+        selected_logs.change(prepare_download_history, [selected_logs], [download_btn])
+        select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
+        task_config.change(load_task, [task_config], [text_column, audio_column])
+        save_btn.click(store_history, [chatbot, system_prompt], [])
+        clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, rag_column])
+        save_prompt_btn.click(save_prompt, [system_prompt], [])
+        upload_data_btt.upload(
+            validate, [gr.Textbox("dummy", visible=False), audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
+        ).success(
+            upload_run_data,
+            [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+            [chatbot, context_html, rag_column, download_result_btn]
+        )
+        chatbot.like(save_feedback, [chatbot, system_prompt, context_html], None)
+        # .then(
+        #         lambda fn: gr.Textbox(label="Uploaded Document",
+        #                             visible=True,
+        #                             interactive=False,
+        #                             value=fn.split("/")[-1]),
+        # Turn off interactivity while generating if you click
+        txt_msg = txt_btn.click(
+            validate, [input_textbox, audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
+        ).success(
+            interact,
+            [chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+            [chatbot, context_html, rag_column, input_textbox],
+            api_name="llm"
+        )
+        # Turn it back on
+        txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
+        # Turn off interactivity while generating if you hit enter
+        # txt_msg = input_textbox.submit(
+        #     validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
+        # ).success(
+        #     add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
+        # ).then(
+        #     interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column]
+        # )
+        # Turn it back on
+        # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
+
+
+    with gr.Tab("Ingestion"):
+        with gr.Blocks():
+            with gr.Row():
+                index_name = gr.Textbox(label="Index Name")
+                chunk_length = gr.Number(label="Chunk length (char-based)", value=500, scale=0)
+                percentile = gr.Number(label="Percentile thr (sem-based)", value=95, precision=0, scale=0)
+                splitting_strategy = gr.Radio(
+                    label="Splitting strategy",
+                    choices=[("By-Length (simple)", "simple"),
+                            ("By-Length (recursive)", "recursive"),
+                            ("Semantic", "semantic")],
+                    value="recursive",
+                    scale=1
                 )
             with gr.Row():
-                upload_data_btt = gr.UploadButton("Upload & run from data...")
-                download_result_btn = gr.DownloadButton(
-                    label="Download processed data",
-                    value=None,
-                    scale=0,
-                    interactive=False,
+                embed_name = gr.Radio(
+                    choices=list(EMBEDDING_SIZES.keys()),
+                    label="Embedder",
                 )
+            with gr.Row():
+                uploaded_doc = gr.Textbox(label="Uploaded File(s)", interactive=False)
+            with gr.Row():
+                ingestion_in_progress = gr.Text(visible=False)
+            with gr.Row():
+                upload_btt = gr.UploadButton("Select file(s) to upload...",
+                                            file_types=SUPPORTED_FILE_TYPES,
+                                            file_count="multiple",
+                                            scale=0)
+                supported_extensions = ", ".join([f'*.{sft}' for sft in SUPPORTED_FILE_TYPES])
+                supported = gr.HTML(f"<span class='description'>Supported extensions [{supported_extensions}]</span>")
+            with gr.Row():
+                run_ingestion = gr.Button("Run Ingestion", scale=0)
+            
 
-
-    demo.load(
-        get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs]
-    )
-
-    selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
-    selected_logs.change(prepare_download_history, [selected_logs], [download_btn])
-    select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
-    task_config.change(load_task, [task_config], [text_column, audio_column])
-    save_btn.click(store_history, [chatbot, system_prompt], [])
-    clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, rag_column])
-    save_prompt_btn.click(save_prompt, [system_prompt], [])
-    upload_data_btt.upload(
-        validate, [gr.Textbox("dummy", visible=False), audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
-    ).success(
-        upload_run_data,
-        [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
-        [chatbot, context_html, rag_column, download_result_btn]
-    )
-    chatbot.like(save_feedback, [chatbot, system_prompt, context_html], None)
-    # .then(
-    #         lambda fn: gr.Textbox(label="Uploaded Document",
-    #                             visible=True,
-    #                             interactive=False,
-    #                             value=fn.split("/")[-1]),
-    # Turn off interactivity while generating if you click
-    txt_msg = txt_btn.click(
-        validate, [input_textbox, audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
-    ).success(
-        interact,
-        [chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
-        [chatbot, context_html, rag_column, input_textbox],
-        api_name="llm"
-    )
-    # Turn it back on
-    txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
-    # Turn off interactivity while generating if you hit enter
-    # txt_msg = input_textbox.submit(
-    #     validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
-    # ).success(
-    #     add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
-    # ).then(
-    #     interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column]
-    # )
-    # Turn it back on
-    # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
-
+        upload_btt.upload(upload_file, [upload_btt], [uploaded_doc])
+        run_ingestion.click(validate_vs, [index_name, embed_name, upload_btt, chunk_length, percentile]
+                            ).success(
+                                lambda: gr.Textbox(interactive=False,
+                                                visible=True,
+                                                label="Status",
+                                                elem_id="status",
+                                                value="Ingestion in progress..."),
+                                [],
+                                [ingestion_in_progress]
+                            ).then(
+                                perform_ingest,
+                                [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy]
+                            ).then(
+                                lambda: gr.Textbox(visible=False),
+                                [],
+                                [ingestion_in_progress]
+                            )
 demo.queue()
 # demo.launch(debug=True)
 demo.launch(debug=True, auth=authenticate)
+

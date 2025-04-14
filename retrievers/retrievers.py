@@ -41,7 +41,12 @@ class LanceDBRetriever:
         self._load_index_config()
 
     def __call__(self, index_name, query, top_k=5):
-        embedding_type = self.index_config[index_name]
+        if index_name not in self.index_config:
+            self._load_index_config()
+        if index_name not in self.index_config:
+            embedding_type = "sentence-transformers/all-MiniLM-L6-v2"
+        else:
+            embedding_type = self.index_config[index_name]
         if embedding_type in self.emb_cache:
             embedder = self.emb_cache[embedding_type]
         else:

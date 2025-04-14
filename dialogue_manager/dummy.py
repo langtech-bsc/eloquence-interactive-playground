@@ -19,7 +19,7 @@ class Response(BaseModel):
 
 @app.post("/respond", response_model=Response)
 async def respond(request: Request):
-    return Response(text=f"This is a Dialogue Manager response to '{request.query}'",
+    return Response(text=f"This is a Dialogue Manager response to '{request.query}'. This is retrived from document 1 [doc1]",
                     documents=["This is a sample document 1", "This is another supporting doc"])
 
 
@@ -34,4 +34,4 @@ async def respond(request: Request):
 # Response: { "id": 1, "name": "New Item", "description": "Description of the new item" }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8080)
+    uvicorn.run(app, host="127.0.0.1", port=8088)
