@@ -12,6 +12,7 @@ import sqlite3
 import shutil
 import datetime
 import time
+import re
 
 import gradio as gr
 import markdown
@@ -20,7 +21,8 @@ from transformers import pipeline
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.query_llm import LLMHandler
-from gradio_app.backend.retrievers import LanceDBRetriever
+from gradio_app.backend.task_handlers import get_task_handler
+from retrievers.retrievers import LanceDBRetriever
 from settings import *
 
 # Setting up the logging
@@ -44,6 +46,7 @@ pipe = pipeline("automatic-speech-recognition", model=model_id)
 def authenticate(user, password):
     db_conn = sqlite3.connect(SQL_DB).cursor()
     result = db_conn.execute(f"SELECT username FROM users WHERE username='{user}' and password='{password}'").fetchone()
+    return True
     return result and result[0] == user
 
 
@@ -53,8 +56,19 @@ examples = [
     "Which countries are participating?",
     "What is Omilia's task in this project?",
     "What computational resources are available?",
+    "give me all information about the GPUS",
     "Do you prefer cats or dogs?"
 ]
+
+
+def replace_doc_links(text):
+    def repl(match):
+        doc_id = match.group(1)
+        url = f"#{doc_id}"
+        return f'<a href="{url}" onmouseover="document.getElementById(\'doc_{doc_id}\').style=\'border: 2px solid white;background:#f27618\'; display: block;" onmouseout="document.getElementById(\'doc_{doc_id}\').style=\'border: 1px solid white; background: none; display:none;\'" >[{doc_id}]</a>'
+    
+    rep = re.sub(r"\[doc (\d+)\]", repl, text)
+    return rep
 
 
 def toggle_sidebar(state):
@@ -278,12 +292,9 @@ def upload_run_data(request: gr.Request, upload_file, history, input_text, audio
                 )
 
 
-
-def interact(history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
+def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
     task_config = json.loads(task_config)
-    with open(INDEX_CONFIG_PATH, "rt") as fd:
-        index_config = json.load(fd)
-
+    task_handler = get_task_handler(task_config, llm_handler, retriever)
     history = [] if history is None else history
     history_user_entry = None
     if task_config["interface"] == "audio":
@@ -297,24 +308,84 @@ def interact(history, input_text, audio_input, llm_name, top_k, temp, top_p, max
         raise gr.Error("Empty string was submitted")
 
     logger.info('Retrieving documents...')
-    documents = [""]
-    if task_config["RAG"]:
-        embed_name = index_config[index_name]
-        documents = retriever(index_name, query, embed_name, top_k)
 
-    documents_html = [markdown.markdown(d) for d in documents]
-    context_html = context_html_template.render(documents=documents_html)
     history += [[history_user_entry, ""]]
-    for part in llm_handler(llm_name, system_prompt, history, documents, temperature=temp, top_p=top_p, max_tokens=max_tokens):
+    for part, documents in task_handler(llm_name,
+                                        system_prompt,
+                                        history,
+                                        query,
+                                        docs_k,
+                                        index_name,
+                                        temperature=temp,
+                                        top_p=top_p,
+                                        max_tokens=max_tokens):
         history[-1][1] += part
+        history[-1][1] = replace_doc_links(history[-1][1])
+        documents_html = [markdown.markdown(d) for d in documents]
+        context_html = context_html_template.render(documents=documents_html)
         yield (history,
                context_html,
-               gr.update(visible=task_config["RAG"] == True),
+               gr.update(visible=len(documents) > 1),
                gr.Textbox(value="", interactive=False),
                documents_html,
                )
 
-with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
+JS = """
+function Scrolldown() {
+let targetNode = document.querySelector('[aria-label="chatbot conversation"]');
+// Options for the observer (which mutations to observe)
+const config = { attributes: true, childList: true, subtree: true };
+
+// Callback function to execute when mutations are observed
+const callback = (mutationList, observer) => {
+targetNode.scrollTop = targetNode.scrollHeight;
+};
+
+// Create an observer instance linked to the callback function
+const observer = new MutationObserver(callback);
+
+// Start observing the target node for configured mutations
+observer.observe(targetNode, config);
+
+}
+
+"""
+
+"""
+function highlightElement(_id) {
+    parent = document.getElementById(_id);
+    const descendants = parent.querySelectorAll("*");
+    descendants.forEach(el => {
+        el.style.color = 'red';
+    });
+};
+"""
+
+def remove_html_tags_and_content(text):
+    return re.sub(r'<[^>]*>.*?</[^>]*>', '', text, flags=re.DOTALL)
+
+
+def save_feedback(request: gr.Request, x: gr.LikeData, chatbot, system_prompt, rag):
+    message = {
+        "user": request.username,
+        "feedback": int(x.liked),
+        "history": remove_html_tags_and_content(chatbot[x.index[0]][x.index[1]]),
+        "system_prompt": system_prompt
+    }
+    path = os.path.join(USER_WORKSPACES, "feedback.json")
+    if os.path.exists(path):
+        with open(path, "rt") as fd:
+            feedback = json.load(fd)
+    else:
+        feedback = []
+    feedback.append(message)
+    
+    with open(path, "wt") as fd:
+        feedback = json.dump(feedback, fd, indent=4)
+    gr.Info("Feedback saved")
+
+
+with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
     with gr.Row():
         with gr.Column():
             chatbot = gr.Chatbot(
@@ -323,11 +394,11 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
                 avatar_images=('assets/user.jpeg',
                             'assets/eloq.png'),
                 bubble_full_width=True,
-                show_copy_button=True,
-                # show_share_button=True,
+                show_copy_button=False,
+                show_share_button=False,
                 height=400,
                 label="EloquenceBot",
-                # autoscroll=True,
+                sanitize_html=False
             )
             with gr.Row(equal_height=True):
                 with gr.Column(visible=True) as text_column:
@@ -361,7 +432,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
 
     with gr.Row():
         with gr.Column():
-            top_k = gr.Number(
+            docs_k = gr.Number(
                 value=5,
                 label="Top K documents",
             )
@@ -442,12 +513,13 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, rag_column])
     save_prompt_btn.click(save_prompt, [system_prompt], [])
     upload_data_btt.upload(
-        validate, [gr.Textbox("dummy", visible=False), audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
+        validate, [gr.Textbox("dummy", visible=False), audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
     ).success(
         upload_run_data,
-        [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+        [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
         [chatbot, context_html, rag_column, download_result_btn]
     )
+    chatbot.like(save_feedback, [chatbot, system_prompt, context_html], None)
     # .then(
     #         lambda fn: gr.Textbox(label="Uploaded Document",
     #                             visible=True,
@@ -455,10 +527,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     #                             value=fn.split("/")[-1]),
     # Turn off interactivity while generating if you click
     txt_msg = txt_btn.click(
-        validate, [input_textbox, audio_input, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
+        validate, [input_textbox, audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
     ).success(
         interact,
-        [chatbot, input_textbox, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+        [chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
         [chatbot, context_html, rag_column, input_textbox],
         api_name="llm"
     )
@@ -476,5 +548,5 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 demo.queue()
-demo.launch(debug=True)
-# demo.launch(debug=True, auth=authenticate)
+# demo.launch(debug=True)
+demo.launch(debug=True, auth=authenticate)

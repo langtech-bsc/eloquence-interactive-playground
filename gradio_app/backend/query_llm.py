@@ -27,12 +27,14 @@ class LLMHandler:
             self._cache[llm_name] = llm
         llm.set_params(**params)
         messages = LLMHandler.build_messages(documents, history, llm_name, system_prompt)
-        return llm(messages)
+        repsonse = llm(messages)
+        return repsonse
+
 
     @staticmethod
     def build_messages(documents, history, llm, system_prompt):
         context = ""
-        while len(documents) != 0:
+        while len(documents) > 0:
             context = context_template.render(documents=documents)
             messages = LLMHandler.construct_message_list(llm, system_prompt, context, history)
             num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
