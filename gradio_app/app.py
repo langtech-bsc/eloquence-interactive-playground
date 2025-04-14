@@ -476,5 +476,5 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS,) as demo:
     # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 demo.queue()
-demo.launch(debug=True)
-# demo.launch(debug=True, auth=authenticate)
+#demo.launch(debug=True)
+demo.launch(debug=True, auth=authenticate)
