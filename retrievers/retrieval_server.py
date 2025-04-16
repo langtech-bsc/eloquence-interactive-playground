@@ -1,48 +1,49 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
+from retrievers.retrievers import LanceDBRetriever
 import uvicorn
+import lancedb
+import shutil
+import os
+from settings import *
+
 
 app = FastAPI()
+vector_store = lancedb.connect(LANCEDB_DIRECTORY)
+retriever = LanceDBRetriever(vector_store, threshold=None)
 
-# Example data storage (in-memory)
-items = []
 
-# Pydantic model for creating items
-class Item(BaseModel):
-    id: int
-    name: str
-    description: Optional[str] = None
+class SearchResult(BaseModel):
+    documents: List[str]
 
-@app.get("/search", response_model=Optional[Item])
-async def search_item(name: str):
-    """
-    Endpoint to search for an item by name.
-    """
-    for item in items:
-        if item.name == name:
-            return item
-    return None
 
-@app.post("/create", response_model=Item)
-async def create_item(item: Item):
-    """
-    Endpoint to create a new item.
-    """
-    if any(existing_item.id == item.id for existing_item in items):
-        raise HTTPException(status_code=400, detail="Item with this ID already exists.")
-    
-    items.append(item)
-    return item
+@app.get("/search", response_model=SearchResult)
+async def search_item(index_name: str, query: str, top_k: int = 5):
+    results = retriever(index_name, query, int(top_k))
+    response = SearchResult(documents=results)
+    return response
 
-# Sample request and response for /search
-# Request: GET /search?name=Sample Item
-# Response: { "id": 1, "name": "Sample Item", "description": "A sample item" }
 
-# Sample request and response for /create
-# Request: POST /create
-# Body: { "id": 1, "name": "New Item", "description": "Description of the new item" }
-# Response: { "id": 1, "name": "New Item", "description": "Description of the new item" }
+@app.post("/create")
+async def create_vs(
+    files: List[UploadFile] = File(...),
+    chunk_size: int = Form(...),
+    percentile: float = Form(...),
+    embed_name: str = Form(...),
+    table_name: str = Form(...),
+    splitting_strategy: str = Form(...)
+):
+    uploaded_files = []
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    for file in files:
+        file_location = f"{UPLOAD_DIR}/{file.filename}"
+        with open(file_location, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        uploaded_files.append(file_location)
+    retriever.create(uploaded_files, chunk_size, percentile, embed_name, table_name, splitting_strategy)
+    return "Success"
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

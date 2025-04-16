@@ -17,7 +17,7 @@ class LocalTaskHandler:
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
         documents = [""]
         if self.task_config["RAG"]:
-            documents = self.retriever(index_name, query, docs_k)
+            documents = self.retriever.search(index_name, query, docs_k)
         for part in self.llm_handler(llm_name, system_prompt, history, documents, **params):
             yield part, documents
 

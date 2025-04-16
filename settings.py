@@ -5,7 +5,7 @@ LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
 DOCUMENT_PATH_COLUMN_NAME = "document_path"
-
+UPLOAD_DIR = "/tmp/uploads"
 TOP_K_RANK = 50
 TOP_K_RERANK = 5
 SUPPORTED_FILE_TYPES = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
@@ -13,7 +13,7 @@ SUPPORTED_FILE_TYPES = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
 EMBEDDING_SIZES = {
     "sentence-transformers/all-MiniLM-L6-v2": 384,
     "sentence-transformers/all-mpnet-base-v2": 768,
-    # "text-embedding-ada-002": 1536,
+    "text-embedding-ada-002": 1536,
 }
 
 THRESHOLD_DISTANCES = {

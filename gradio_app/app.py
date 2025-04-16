@@ -23,7 +23,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
-from retrievers.retrievers import LanceDBRetriever
+from retrievers.client import RetrieverClient
 from settings import *
 
 # Setting up the logging
@@ -38,12 +38,10 @@ context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
 vector_store = lancedb.connect(LANCEDB_DIRECTORY)
-retriever = LanceDBRetriever(vector_store, threshold=None)
+retriever = RetrieverClient(endpoint=os.environ.get("RETRIEVER_ENDPOINT", "http://127.0.0.1:8000"))
 llm_handler = LLMHandler()
 
 
-model_id = "openai/whisper-tiny"  # update with your model id
-pipe = pipeline("automatic-speech-recognition", model=model_id)
 def authenticate(user, password):
     db_conn = sqlite3.connect(SQL_DB).cursor()
     result = db_conn.execute(f"SELECT username FROM users WHERE username='{user}' and password='{password}'").fetchone()
@@ -78,7 +76,7 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
     if file_paths is None or len(file_paths) == 0:
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
-    retriever.create(
+    retriever.create_vs(
         [os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths],
         chunk_size,
         percentile,
@@ -121,12 +119,12 @@ def replace_doc_links(text):
         return f'<a href="{url}" onmouseover="document.getElementById(\'doc_{doc_id}\').style=\'border: 2px solid white;background:#f27618\'; display: block;" onmouseout="document.getElementById(\'doc_{doc_id}\').style=\'border: 1px solid white; background: none; display:none;\'" >[{doc_id}]</a>'
     
     rep = re.sub(r"\[doc ?(\d+)\]", repl, text)
-    rep = re.sub(r"\[document ?(\d+)\]", repl, text)
-    rep = re.sub(r"\(doc ?(\d+)\)", repl, text)
-    rep = re.sub(r"\(document ?(\d+)\)", repl, text)
-    rep = re.sub(r"document ?(\d+)", repl, text)
-    rep = re.sub(r"document no. ?(\d+)", repl, text)
-    rep = re.sub(r"Document no. ?(\d+)", repl, text)
+    rep = re.sub(r"\[document ?(\d+)\]", repl, rep)
+    rep = re.sub(r"\(doc ?(\d+)\)", repl, rep)
+    rep = re.sub(r"\(document ?(\d+)\)", repl, rep)
+    rep = re.sub(r"document ?(\d+)", repl, rep)
+    rep = re.sub(r"document no. ?(\d+)", repl, rep)
+    rep = re.sub(r"Document no. ?(\d+)", repl, rep)
 
     return rep
 
