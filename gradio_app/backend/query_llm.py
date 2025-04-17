@@ -4,6 +4,7 @@ import logging
 from jinja2 import Environment, FileSystemLoader
 
 from settings import LLM_CONTEXT_LENGHTS, AVAILABLE_LLMS
+from gradio_app.helpers import reverse_doc_links
 from gradio_app.backend.ChatGptInteractor import apx_num_tokens_from_messages, ChatGptInteractor
 from gradio_app.backend.HuggingfaceGenerator import HuggingfaceGenerator
 from gradio_app.backend.BSCInteract import BSCInteractor
@@ -89,7 +90,6 @@ class LLMHandler:
                         "content": q,
                     })
                 elif len(a) == 0:
-                    logger.info("Audio Here!")
                     messages.append({
                         "role": "user",
                         "content": [
@@ -110,7 +110,7 @@ class LLMHandler:
                 if len(a) != 0:  # some of the previous LLM answers
                     messages.append({
                         "role": "assistant",
-                        "content": a,
+                        "content": reverse_doc_links(a),
                     })
         else:
             messages = [
@@ -135,16 +135,3 @@ class LLMHandler:
                         "content": a,
                     }) 
         return messages
-
-
-def get_message_constructor(llm_name, system_prompt):
-    if llm_name in ['gpt-3.5-turbo']:
-        return get_construct_openai_messages(system_prompt)
-    if llm_name in ["meta-llama/Meta-Llama-3-8B",
-                    "mistralai/Mistral-7B-Instruct-v0.1",
-                    "tiiuae/falcon-180B-chat",
-                    "GeneZC/MiniChat-3B",
-                    ]:
-        return construct_mistral_messages
-    raise ValueError('Unknown LLM name')
-

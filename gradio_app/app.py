@@ -25,6 +25,7 @@ from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
 from retrievers.client import RetrieverClient
 from settings import *
+from gradio_app.helpers import replace_doc_links
 
 # Setting up the logging
 logging.basicConfig(level=logging.INFO)
@@ -112,22 +113,6 @@ def validate_vs(index_name, embedder, uploaded_files, chunk_length, percentile):
         raise gr.Error("'Percentile' must be an integer between '0' and '100'")
 
 ######## FOR PLAYGROUND ##############
-
-def replace_doc_links(text):
-    def repl(match):
-        doc_id = match.group(1)
-        url = f"#{doc_id}"
-        return f'<a href="{url}" onmouseover="document.getElementById(\'doc_{doc_id}\').style=\'border: 2px solid white;background:#f27618\'; display: block;" onmouseout="document.getElementById(\'doc_{doc_id}\').style=\'border: 1px solid white; background: none; display:none;\'" >[{doc_id}]</a>'
-    
-    rep = re.sub(r"\[doc ?(\d+)\]", repl, text)
-    rep = re.sub(r"\[document ?(\d+)\]", repl, rep)
-    rep = re.sub(r"\(doc ?(\d+)\)", repl, rep)
-    rep = re.sub(r"\(document ?(\d+)\)", repl, rep)
-    rep = re.sub(r"document ?(\d+)", repl, rep)
-    rep = re.sub(r"document no. ?(\d+)", repl, rep)
-    rep = re.sub(r"Document no. ?(\d+)", repl, rep)
-
-    return rep
 
 
 def toggle_sidebar(state):
