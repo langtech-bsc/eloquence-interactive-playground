@@ -2,13 +2,13 @@ import os
 import json
 
 MARKDOWN_SOURCE_DIR = "data/transformers/docs/source/en/"
-DATA_ROOT = "./app"
-LANCEDB_DIRECTORY = f"{DATA_ROOT}/eloquence-playground/lancedb"
+PERSISTENT_DATA_ROOT = os.environ.get("PERSISTENT_DATA", "/app")
+LANCEDB_DIRECTORY = f"{PERSISTENT_DATA_ROOT}/lancedb"
 LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
-DOCUMENT_PATH_COLUMN_NAME = "document_path"
-
+METADATA = "metadata"
+UPLOAD_DIR = "/tmp/uploads"
 TOP_K_RANK = 50
 TOP_K_RERANK = 5
 SUPPORTED_FILE_TYPES = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
@@ -16,7 +16,7 @@ SUPPORTED_FILE_TYPES = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
 EMBEDDING_SIZES = {
     "sentence-transformers/all-MiniLM-L6-v2": 384,
     "sentence-transformers/all-mpnet-base-v2": 768,
-    # "text-embedding-ada-002": 1536,
+    "text-embedding-ada-002": 1536,
 }
 
 class LLMEntry:
@@ -53,7 +53,7 @@ LLM_CONTEXT_LENGHTS = {
 INDEX_CONFIG_PATH = "configurations/indexes.json"
 PROMPTS_PATH = "configurations/prompts.json"
 TASK_CONFIG_DIR = "configurations/task_configs/"
-USER_WORKSPACES = f"{DATA_ROOT}/eloquence-playground/workspaces"
+USER_WORKSPACES = f"{PERSISTENT_DATA_ROOT}/workspaces"
 GENERIC_UPLOAD = f"uploads"
 SQL_DB = "ip.db"
 

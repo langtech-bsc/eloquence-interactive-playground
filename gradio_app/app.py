@@ -23,7 +23,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
-from retrievers.retrievers import LanceDBRetriever
+from retrievers.client import RetrieverClient
 from settings import *
 
 # Setting up the logging
@@ -38,12 +38,10 @@ context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
 vector_store = lancedb.connect(LANCEDB_DIRECTORY)
-retriever = LanceDBRetriever(vector_store, threshold=None)
+retriever = RetrieverClient(endpoint=os.environ.get("RETRIEVER_ENDPOINT", "http://127.0.0.1:8000"))
 llm_handler = LLMHandler()
 
 
-model_id = "openai/whisper-tiny"  # update with your model id
-pipe = pipeline("automatic-speech-recognition", model=model_id)
 def authenticate(user, password):
     db_conn = sqlite3.connect(SQL_DB).cursor()
     result = db_conn.execute(f"SELECT username FROM users WHERE username='{user}' and password='{password}'").fetchone()
@@ -79,7 +77,7 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
     if file_paths is None or len(file_paths) == 0:
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
-    retriever.create(
+    retriever.create_vs(
         [os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths],
         chunk_size,
         percentile,
@@ -139,9 +137,37 @@ def toggle_sidebar(state):
 
 
 def get_dynamic_fields(request: gr.Request, selected_logs):
-    return _get_tables(), _get_configs(), _get_prompts(request.username), _get_historical_prompts(request.username)
+    return _get_tables(), _get_configs(), _get_prompts(request.username), _get_historical_prompts(request.username), _get_online_models()
 
 
+def _get_online_models():
+    def _check_if_online(model_name):
+        gr.Info(f"Checking availability of {model_name}")
+        task_handler = get_task_handler({"interface": "text", "RAG": False, "service": "local"}, llm_handler, retriever)
+        query = history_user_entry = "hello"
+        history = [[history_user_entry, ""]]
+        try: 
+            for part, documents in task_handler(model_name,
+                                                "",
+                                                history,
+                                                query,
+                                                0,
+                                                "index_name"):
+                return True
+        except Exception as e:
+            return False
+        
+    choices=[
+        ("GPT-3.5", "gpt-3.5-turbo")
+        ] + [(llm_entry.name, llm_entry.name) for llm_entry in AVAILABLE_LLMS.values()],
+    online_choices =  [choice for choice in choices
+                       if _check_if_online(choice[1])]
+    return gr.Radio(
+        label="Available LLMs",
+        choices=online_choices,
+    )
+
+        
 def _get_tables():
     return gr.Radio(
         label="Index name",
@@ -438,7 +464,7 @@ def save_feedback(request: gr.Request, x: gr.LikeData, chatbot, system_prompt, r
         "history": remove_html_tags_and_content(chatbot[x.index[0]][x.index[1]]),
         "system_prompt": system_prompt
     }
-    path = os.path.join(USER_WORKSPACES, "feedback.json")
+    path = os.path.join(USER_WORKSPACES, "user_feedback.json")
     if os.path.exists(path):
         with open(path, "rt") as fd:
             feedback = json.load(fd)
@@ -523,11 +549,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
                     label="Task configuration",
                 )
                 llm_name = gr.Radio(
-                    choices=[
-                        ("GPT-3.5", "gpt-3.5-turbo"),
-                    ] + [(llm_entry.name, llm_entry.name) for llm_entry in AVAILABLE_LLMS.values()],
-                    value="gpt-3.5-turbo",
-                    label='LLM'
+                    label='Available LLMs'
                 )
             with gr.Column():
                 system_prompt = gr.Textbox(
@@ -566,7 +588,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
 
 
         demo.load(
-            get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs]
+            get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs, llm_name]
         )
 
         selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
