@@ -88,17 +88,14 @@ class BSCInteractor:
 
     def _request(self, messages):
         openai.api_base = self.api_endpoint
+        logger.info(self.api_endpoint + " " + self.model_name)
+        logger.info(len(messages))
+        logger.info(str([m['role'] for m in messages]))
         for _ in range(5):
             try:
-                if "8082" in self.api_endpoint:
-                    model = "tgi"
-                elif "8086" in self.api_endpoint:
-                    model = "EuroLLM-9B-Instruct"
-                else:
-                    model = "OLMo-7B-Instruct-hf"
                 completion = openai.ChatCompletion.create(
                     messages=messages,
-                    model=model,
+                    model=self.model_name,
                     stream=self.stream,
                     request_timeout=100.0,
                     **self.generate_kwargs

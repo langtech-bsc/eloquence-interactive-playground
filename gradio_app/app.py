@@ -61,6 +61,7 @@ examples = [
     "Do you prefer cats or dogs?"
 ]
 
+
 ############# FOR VS Creation #########
 def upload_file(file_paths):
     out = []
@@ -121,12 +122,12 @@ def replace_doc_links(text):
         return f'<a href="{url}" onmouseover="document.getElementById(\'doc_{doc_id}\').style=\'border: 2px solid white;background:#f27618\'; display: block;" onmouseout="document.getElementById(\'doc_{doc_id}\').style=\'border: 1px solid white; background: none; display:none;\'" >[{doc_id}]</a>'
     
     rep = re.sub(r"\[doc ?(\d+)\]", repl, text)
-    rep = re.sub(r"\[document ?(\d+)\]", repl, text)
-    rep = re.sub(r"\(doc ?(\d+)\)", repl, text)
-    rep = re.sub(r"\(document ?(\d+)\)", repl, text)
-    rep = re.sub(r"document ?(\d+)", repl, text)
-    rep = re.sub(r"document no. ?(\d+)", repl, text)
-    rep = re.sub(r"Document no. ?(\d+)", repl, text)
+    rep = re.sub(r"\[document ?(\d+)\]", repl, rep)
+    rep = re.sub(r"\(doc ?(\d+)\)", repl, rep)
+    rep = re.sub(r"\(document ?(\d+)\)", repl, rep)
+    rep = re.sub(r"document ?(\d+)", repl, rep)
+    rep = re.sub(r"document no. ?(\d+)", repl, rep)
+    rep = re.sub(r"Document no. ?(\d+)", repl, rep)
 
     return rep
 
@@ -224,7 +225,7 @@ def update_prompt(selected_prompt):
 def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, task_config):
     if len(text) == 0 and len(audio) == 0:
         raise gr.Error("Empty query")
-    if llm not in LLM_CONTEXT_LENGHTS:
+    if llm not in list(AVAILABLE_LLMS.keys()) + ["gpt-3.5-turbo"]:
         raise gr.Error("Unknown LLM")
     
     def _check_float(val, bmin, bmax):
@@ -362,7 +363,7 @@ def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, ma
     audio_in = None
     if task_config["interface"] == "audio":
         audio_in = audio_input
-        query = ""
+        query = "Describe the audio."
         history_user_entry = query
     else:
         history_user_entry = input_text
@@ -523,11 +524,8 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
                 )
                 llm_name = gr.Radio(
                     choices=[
-                        ("gpt-3.5-turbo", "gpt-3.5-turbo"),
-                        ("BSC (Salamandra-7B)", "bsc"),
-                        ("BSC (Audio-Qwen-7B)", "bsc2"),
-                        # ("BSC (EuroLLM-9B)", "bsc3"),
-                    ],
+                        ("GPT-3.5", "gpt-3.5-turbo"),
+                    ] + [(llm_entry.name, llm_entry.name) for llm_entry in AVAILABLE_LLMS.values()],
                     value="gpt-3.5-turbo",
                     label='LLM'
                 )

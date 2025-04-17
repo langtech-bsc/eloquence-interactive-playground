@@ -3,7 +3,7 @@ import logging
 
 from jinja2 import Environment, FileSystemLoader
 
-from settings import LLM_CONTEXT_LENGHTS
+from settings import LLM_CONTEXT_LENGHTS, AVAILABLE_LLMS
 from gradio_app.backend.ChatGptInteractor import apx_num_tokens_from_messages, ChatGptInteractor
 from gradio_app.backend.HuggingfaceGenerator import HuggingfaceGenerator
 from gradio_app.backend.BSCInteract import BSCInteractor
@@ -17,7 +17,7 @@ context_template = env.get_template('context_template.j2')
 
 class LLMHandler:
     def __init__(self) -> None:
-        self.known_llms = ["gpt-3.5-turbo", "meta-llama/Meta-Llama-3-8B", "bsc", "bsc2", "bsc3"]
+        self.known_llms = ["GPT-3.5"] + [llm.model for llm in AVAILABLE_LLMS.values()]
         self._cache = {}
     
     def __call__(self, llm_name, system_prompt, history, documents, **params):
@@ -40,7 +40,10 @@ class LLMHandler:
         while len(documents) > 0:
             context = context_template.render(documents=documents)
             messages = LLMHandler.construct_message_list(llm, system_prompt, context, history, audio)
-            num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
+            try:
+                num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
+            except:
+                num_tokens = len(str(messages).split()) * 2
             if num_tokens + 512 < LLM_CONTEXT_LENGHTS[llm]:
                 break
             documents.pop()
@@ -49,53 +52,48 @@ class LLMHandler:
         
         
     @staticmethod
-    def get_llm_generator(llm_name):
-        if llm_name == "gpt-3.5-turbo":
+    def get_llm_generator(model_name):
+        if "gpt" in model_name.lower():
             cgi = ChatGptInteractor(
-                model_name=llm_name, max_tokens=512, temperature=0, stream=True
+                model_name=model_name, max_tokens=512, temperature=0, stream=True
             )
             return cgi
-        if llm_name in ["meta-llama/Meta-Llama-3-8B", "mistralai/Mistral-7B-Instruct-v0.1"]:
+        elif model_name in ["meta-llama/Meta-Llama-3-8B", "mistralai/Mistral-7B-Instruct-v0.1"]:
             hfg = HuggingfaceGenerator(
-                model_name=llm_name, temperature=0, max_new_tokens=512,
+                model_name=model_name, temperature=0, max_new_tokens=512,
             )
             return hfg
-        if llm_name.lower() in ["bsc", "bsc2", "bsc3"]:
-            if llm_name == "bsc":
-                bsc_api_endpoint = os.getenv("OPENAI_API_ENDPOINT_URL")
-            elif llm_name == "bsc2":
-                bsc_api_endpoint = os.getenv("OPENAI_API_ENDPOINT_URL_2")
-            else:
-                bsc_api_endpoint = os.getenv("OPENAI_API_ENDPOINT_URL_3")
-            logger.info(bsc_api_endpoint)
+        elif model_name in AVAILABLE_LLMS:
+            model_entry = AVAILABLE_LLMS[model_name]
             cgi = BSCInteractor(
-                api_endpoint=bsc_api_endpoint, model_name="llama3-8B"
+                api_endpoint=model_entry.endpoint, model_name=model_entry.model
             )
             return cgi
 
         raise ValueError('Unknown LLM name')
     
     @staticmethod
-    def construct_message_list(llm_name, system_prompt, context, history, audio=None):
-        if "bsc" in llm_name:
+    def construct_message_list(model_name, system_prompt, context, history, audio=None):
+        if model_name in AVAILABLE_LLMS.keys():
             messages = []
             prepended = False
             for q, a in history:
                 if len(a) == 0:  # the last message
                     q = system_prompt + " Context: " + context + " " + q
-                if audio is None:
+                if audio is None or len(a) != 0:
                     messages.append({
                         "role": "user",
                         "content": q,
                     })
-                else:
+                elif len(a) == 0:
+                    logger.info("Audio Here!")
                     messages.append({
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": q
-                            },
+                        #    {
+                        #        "type": "text",
+                        #        "text": q
+                        #    },
                             {
                                 "type": "input_audio",
                                 "input_audio": {

@@ -1,3 +1,6 @@
+import os
+import json
+
 MARKDOWN_SOURCE_DIR = "data/transformers/docs/source/en/"
 DATA_ROOT = "./app"
 LANCEDB_DIRECTORY = f"{DATA_ROOT}/eloquence-playground/lancedb"
@@ -16,6 +19,17 @@ EMBEDDING_SIZES = {
     # "text-embedding-ada-002": 1536,
 }
 
+class LLMEntry:
+    def __init__(self, llm_entry):
+        llm_entry = llm_entry.split(",")
+        self.endpoint = llm_entry[0]
+        self.model = llm_entry[1]
+        self.name = llm_entry[2]
+
+AVAILABLE_LLMS = json.loads(os.environ.get("OPENAI_API_ENDPOINT_URLs", "[]"))
+AVAILABLE_LLMS = [LLMEntry(entry) for entry in AVAILABLE_LLMS]
+AVAILABLE_LLMS = {entry.name: entry for entry in AVAILABLE_LLMS}
+
 THRESHOLD_DISTANCES = {
     "sentence-transformers/all-MiniLM-L6-v2": 1.2,
     "text-embedding-ada-002": 0.5,
@@ -25,11 +39,12 @@ LLM_CONTEXT_LENGHTS = {
     "mistralai/Mistral-7B-Instruct-v0.1": 4096,
     "tiiuae/falcon-180B-chat": 2048,
     "meta-llama/Meta-Llama-3-8B": 2048,
-    "bsc": 2048,
-    "bsc2": 2048,
-    "bsc3": 2048,
     "GeneZC/MiniChat-3B": 4096,
     "gpt-3.5-turbo": 4096,
+    "Qwen2-Audio": 4096,
+    "EuroLLM": 4096,
+    "Salamandra (MN5)": 8196,
+    "Salamandra (MN5)": 8196,
     "sentence-transformers/all-MiniLM-L6-v2": 128,
     "thenlper/gte-large": 512,
     "text-embedding-ada-002": 1000,  # actual context length is 8191, but it's too much
