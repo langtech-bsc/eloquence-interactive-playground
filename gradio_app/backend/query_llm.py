@@ -30,8 +30,11 @@ class LLMHandler:
             self._cache[llm_name] = llm
         llm.set_params(**params)
         messages = LLMHandler.build_messages(documents, history, llm_name, system_prompt, audio)
-        repsonse = llm(messages)
-        return repsonse
+        try:
+            response = llm(messages)
+            return response
+        except:
+            raise RuntimeError
 
 
     @staticmethod

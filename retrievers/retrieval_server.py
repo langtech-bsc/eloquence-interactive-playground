@@ -45,5 +45,11 @@ async def create_vs(
     return "Success"
 
 
+@app.post("/add")
+async def add_to_vs(text: str, metadata: str, index_name: str):
+    retriever.add_single_chunk(text, metadata, index_name)
+    return "Success"
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

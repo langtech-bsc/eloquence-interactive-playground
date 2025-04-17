@@ -36,7 +36,6 @@ class EmbedderFactory:
     @staticmethod
     def get_embedder(model):
         if model in ["sentence-transformers/all-MiniLM-L6-v2", "sentence-transformers/all-mpnet-base-v2"]:
-            print(model)
             return HuggingFaceEmbeddings(model_name=model)
         else:
             raise ValueError(f"Unsupported embedding model: {model}")

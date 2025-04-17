@@ -18,6 +18,16 @@ class RetrieverClient:
         else:
             return []
     
+    def add(self, text, metadata, index_name):
+        params = {
+            "index_name": index_name,
+            "text": text,
+            "metadata": metadata
+        }
+
+        response = requests.get(f"{self.endpoint}/add", params=params)
+        return response.status_code == 200
+    
     def create_vs(self, files_to_upload, chunk_size, percentile, embed_name, table_name, splitting_strategy):
         files_to_upload = [("files", (open(f, "rb"))) for f in files_to_upload]
         # Other form data

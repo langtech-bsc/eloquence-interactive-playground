@@ -4,7 +4,7 @@ LANCEDB_DIRECTORY = f"{DATA_ROOT}/eloquence-playground/lancedb"
 LANCEDB_TABLE_NAME = "table"
 VECTOR_COLUMN_NAME = "embedding"
 TEXT_COLUMN_NAME = "text"
-DOCUMENT_PATH_COLUMN_NAME = "document_path"
+METADATA = "metadata"
 UPLOAD_DIR = "/tmp/uploads"
 TOP_K_RANK = 50
 TOP_K_RERANK = 5
@@ -14,11 +14,6 @@ EMBEDDING_SIZES = {
     "sentence-transformers/all-MiniLM-L6-v2": 384,
     "sentence-transformers/all-mpnet-base-v2": 768,
     "text-embedding-ada-002": 1536,
-}
-
-THRESHOLD_DISTANCES = {
-    "sentence-transformers/all-MiniLM-L6-v2": 1.2,
-    "text-embedding-ada-002": 0.5,
 }
 
 LLM_CONTEXT_LENGHTS = {

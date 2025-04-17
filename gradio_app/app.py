@@ -136,9 +136,37 @@ def toggle_sidebar(state):
 
 
 def get_dynamic_fields(request: gr.Request, selected_logs):
-    return _get_tables(), _get_configs(), _get_prompts(request.username), _get_historical_prompts(request.username)
+    return _get_tables(), _get_configs(), _get_prompts(request.username), _get_historical_prompts(request.username), _get_online_models()
 
 
+def _get_online_models():
+    def _check_if_online(model_name):
+        gr.Info(f"Checking availability of {model_name}")
+        task_handler = get_task_handler({"interface": "text", "RAG": False, "service": "local"}, llm_handler, retriever)
+        query = history_user_entry = "hello"
+        history = [[history_user_entry, ""]]
+        try: 
+            for part, documents in task_handler(model_name,
+                                                "",
+                                                history,
+                                                query,
+                                                0,
+                                                "index_name"):
+                return True
+        except Exception as e:
+            return False
+
+
+    online_choices =  [choice for choice in [("gpt-3.5-turbo", "gpt-3.5-turbo"),
+                                             ("BSC (Salamandra-7B)", "bsc"),
+                                             ("BSC (Audio-Qwen-7B)", "bsc2")]
+                                             if _check_if_online(choice[1])]
+    return gr.Radio(
+        label="Available LLMs",
+        choices=online_choices,
+    )
+
+        
 def _get_tables():
     return gr.Radio(
         label="Index name",
@@ -360,7 +388,7 @@ def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, ma
     audio_in = None
     if task_config["interface"] == "audio":
         audio_in = audio_input
-        query = ""
+        query = input_text
         history_user_entry = query
     else:
         history_user_entry = input_text
@@ -520,13 +548,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
                     label="Task configuration",
                 )
                 llm_name = gr.Radio(
-                    choices=[
-                        ("gpt-3.5-turbo", "gpt-3.5-turbo"),
-                        ("BSC (Salamandra-7B)", "bsc"),
-                        ("BSC (Audio-Qwen-7B)", "bsc2"),
-                        # ("BSC (EuroLLM-9B)", "bsc3"),
-                    ],
-                    value="gpt-3.5-turbo",
                     label='LLM'
                 )
             with gr.Column():
@@ -566,7 +587,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
 
 
         demo.load(
-            get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs]
+            get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs, llm_name]
         )
 
         selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
