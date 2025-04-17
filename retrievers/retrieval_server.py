@@ -52,4 +52,5 @@ async def add_to_vs(text: str, metadata: str, index_name: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    endpoint = os.environ.get("RETRIEVER_ENDPOINT", "http://127.0.0.1:8000").replace("http://", "").split(":")
+    uvicorn.run(app, host=endpoint[0], port=int(endpoint[1]))

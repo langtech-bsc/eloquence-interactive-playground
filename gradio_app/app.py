@@ -144,7 +144,7 @@ def _get_online_models():
     def _check_if_online(model_name):
         gr.Info(f"Checking availability of {model_name}")
         task_handler = get_task_handler({"interface": "text", "RAG": False, "service": "local"}, llm_handler, retriever)
-        query = history_user_entry = "hello"
+        query = history_user_entry = "hello, say one random words"
         history = [[history_user_entry, ""]]
         try: 
             for part, documents in task_handler(model_name,
@@ -152,14 +152,15 @@ def _get_online_models():
                                                 history,
                                                 query,
                                                 0,
-                                                "index_name"):
+                                                "index_name",
+                                                max_tokens=2):
                 return True
         except Exception as e:
             return False
         
     choices=[
         ("GPT-3.5", "gpt-3.5-turbo")
-        ] + [(llm_entry.name, llm_entry.name) for llm_entry in AVAILABLE_LLMS.values()],
+        ] + [(llm_entry.name, llm_entry.name) for llm_entry in AVAILABLE_LLMS.values()]
     online_choices =  [choice for choice in choices
                        if _check_if_online(choice[1])]
     return gr.Radio(
