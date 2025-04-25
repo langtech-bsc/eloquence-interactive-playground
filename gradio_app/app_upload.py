@@ -15,7 +15,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from retrievers.retrievers import LanceDBRetriever
 
-from settings import *
+from settings import settings
 
 # Setting up the logging
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +27,7 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 # Load the templates directly from the environment
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
-db = lancedb.connect(LANCEDB_DIRECTORY)
+db = lancedb.connect(settings.LANCEDB_DIRECTORY)
 retriever = LanceDBRetriever(db, threshold=None)
 
 
@@ -35,8 +35,8 @@ def upload_file(file_paths):
     out = []
     for file_path in file_paths:
         gr.Info("Uploading File")
-        os.makedirs(GENERIC_UPLOAD, exist_ok=True)
-        shutil.copy(file_path, GENERIC_UPLOAD)
+        os.makedirs(settings.GENERIC_UPLOAD, exist_ok=True)
+        shutil.copy(file_path, settings.GENERIC_UPLOAD)
         out.append(os.path.basename(file_path))
         gr.Info(f"File '{out[-1]}' uploaded")
 
@@ -48,7 +48,7 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
     retriever.create(
-        [os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths],
+        [os.path.join(settings.GENERIC_UPLOAD, fp) for fp in file_paths],
         chunk_size,
         percentile,
         embed_name,
@@ -66,7 +66,7 @@ def validate(index_name, embedder, uploaded_files, chunk_length, percentile):
         raise gr.Error("Please select at least one file.")
     for uf in uploaded_files:
         uf = os.path.basename(uf)
-        if not any([uf.endswith(suff) for suff in SUPPORTED_FILE_TYPES]):
+        if not any([uf.endswith(suff) for suff in settings.SUPPORTED_FILE_TYPES]):
             raise gr.Error(f"File '{uf}': filetype not supported!")
     try:
         chunk_length = int(chunk_length)
@@ -82,7 +82,7 @@ def validate(index_name, embedder, uploaded_files, chunk_length, percentile):
         raise gr.Error("'Percentile' must be an integer between '0' and '100'")
 
 
-with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
+with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS) as demo:
     with gr.Blocks():
         with gr.Row():
             index_name = gr.Textbox(label="Index Name")
@@ -98,7 +98,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
             )
         with gr.Row():
             embed_name = gr.Radio(
-                choices=list(EMBEDDING_SIZES.keys()),
+                choices=list(settings.EMBEDDING_SIZES.keys()),
                 label="Embedder",
             )
         with gr.Row():
@@ -107,10 +107,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS) as demo:
             ingestion_in_progress = gr.Text(visible=False)
         with gr.Row():
             upload_btt = gr.UploadButton("Select file(s) to upload...",
-                                         file_types=SUPPORTED_FILE_TYPES,
+                                         file_types=settings.SUPPORTED_FILE_TYPES,
                                          file_count="multiple",
                                          scale=0)
-            supported_extensions = ", ".join([f'*.{sft}' for sft in SUPPORTED_FILE_TYPES])
+            supported_extensions = ", ".join([f'*.{sft}' for sft in settings.SUPPORTED_FILE_TYPES])
             supported = gr.HTML(f"<span class='description'>Supported extensions [{supported_extensions}]</span>")
         with gr.Row():
             run_ingestion = gr.Button("Run Ingestion", scale=0)

@@ -18,13 +18,12 @@ import base64
 import gradio as gr
 import markdown
 import lancedb
-from transformers import pipeline
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
 from retrievers.client import RetrieverClient
-from settings import *
+from settings import settings
 from gradio_app.helpers import replace_doc_links
 
 # Setting up the logging
@@ -38,13 +37,13 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-vector_store = lancedb.connect(LANCEDB_DIRECTORY)
+vector_store = lancedb.connect(settings.LANCEDB_DIRECTORY)
 retriever = RetrieverClient(endpoint=os.environ.get("RETRIEVER_ENDPOINT", "http://127.0.0.1:8000"))
 llm_handler = LLMHandler()
 
 
 def authenticate(user, password):
-    db_conn = sqlite3.connect(SQL_DB).cursor()
+    db_conn = sqlite3.connect(settings.SQL_DB).cursor()
     result = db_conn.execute(f"SELECT username FROM users WHERE username='{user}' and password='{password}'").fetchone()
     return True
     return result and result[0] == user
@@ -66,8 +65,8 @@ def upload_file(file_paths):
     out = []
     for file_path in file_paths:
         gr.Info("Uploading File")
-        os.makedirs(GENERIC_UPLOAD, exist_ok=True)
-        shutil.copy(file_path, GENERIC_UPLOAD)
+        os.makedirs(settings.GENERIC_UPLOAD, exist_ok=True)
+        shutil.copy(file_path, settings.GENERIC_UPLOAD)
         out.append(os.path.basename(file_path))
         gr.Info(f"File '{out[-1]}' uploaded")
 
@@ -79,7 +78,7 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
     retriever.create_vs(
-        [os.path.join(GENERIC_UPLOAD, fp) for fp in file_paths],
+        [os.path.join(settings.GENERIC_UPLOAD, fp) for fp in file_paths],
         chunk_size,
         percentile,
         embed_name,
@@ -97,7 +96,7 @@ def validate_vs(index_name, embedder, uploaded_files, chunk_length, percentile):
         raise gr.Error("Please select at least one file.")
     for uf in uploaded_files:
         uf = os.path.basename(uf)
-        if not any([uf.endswith(suff) for suff in SUPPORTED_FILE_TYPES]):
+        if not any([uf.endswith(suff) for suff in settings.SUPPORTED_FILE_TYPES]):
             raise gr.Error(f"File '{uf}': filetype not supported!")
     try:
         chunk_length = int(chunk_length)
@@ -145,7 +144,7 @@ def _get_online_models():
         
     choices=[
         ("GPT-3.5", "gpt-3.5-turbo")
-        ] + [(llm_entry.name, llm_entry.name) for llm_entry in AVAILABLE_LLMS.values()]
+        ] + [(llm_entry.name, llm_entry.name) for llm_entry in settings.AVAILABLE_LLMS.values()]
     online_choices =  [choice for choice in choices
                        if _check_if_online(choice[1])]
     return gr.Radio(
@@ -162,7 +161,7 @@ def _get_tables():
 
 
 def _get_prompts(user):
-    prompts_path = os.path.join(USER_WORKSPACES, user if user is not None else "anonymous", "prompts.json")
+    prompts_path = os.path.join(settings.USER_WORKSPACES, user if user is not None else "anonymous", "prompts.json")
     prompts = []
     if os.path.exists(prompts_path):
         with open(prompts_path, "rt") as fd:
@@ -174,7 +173,7 @@ def _get_prompts(user):
 
 
 def save_prompt(request: gr.Request, prompt):
-    prompts_path = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "prompts.json")
+    prompts_path = os.path.join(settings.USER_WORKSPACES, request.username if request.username is not None else "anonymous", "prompts.json")
     os.makedirs(os.path.dirname(prompts_path), exist_ok=True)
     prompts = []
     if os.path.exists(prompts_path):
@@ -188,8 +187,8 @@ def save_prompt(request: gr.Request, prompt):
 
 def _get_configs():
     configs = []
-    for fn in os.listdir(TASK_CONFIG_DIR):
-        with open(os.path.join(TASK_CONFIG_DIR, fn), "rt") as fd:
+    for fn in os.listdir(settings.TASK_CONFIG_DIR):
+        with open(os.path.join(settings.TASK_CONFIG_DIR, fn), "rt") as fd:
             content = json.load(fd)
             configs.append((content["name"], json.dumps(content)))
     return gr.Radio(
@@ -219,7 +218,7 @@ def transcribe(filepath):
 
 
 def _get_historical_prompts(user):
-    history_path = os.path.join(USER_WORKSPACES, user if user is not None else "anonymous", "history.json")
+    history_path = os.path.join(settings.USER_WORKSPACES, user if user is not None else "anonymous", "history.json")
     logs = []
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
@@ -237,7 +236,7 @@ def update_prompt(selected_prompt):
 def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, task_config):
     if len(text) == 0 and len(audio) == 0:
         raise gr.Error("Empty query")
-    if llm not in list(AVAILABLE_LLMS.keys()) + ["gpt-3.5-turbo"]:
+    if llm not in list(settings.AVAILABLE_LLMS.keys()) + ["gpt-3.5-turbo"]:
         raise gr.Error("Unknown LLM")
     
     def _check_float(val, bmin, bmax):
@@ -264,7 +263,7 @@ def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, ta
 
 
 def _get_history_from_file(user, history_name):
-    history_path = os.path.join(USER_WORKSPACES, user if user is not None else "anonymous", "history.json")
+    history_path = os.path.join(settings.USER_WORKSPACES, user if user is not None else "anonymous", "history.json")
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
             logs = json.load(fd)
@@ -283,7 +282,7 @@ def load_history(request: gr.Request, history_name, orig_history, orig_prompt):
 def prepare_download_history(request: gr.Request, history_name):
     history = _get_history_from_file(request.username, history_name)
     if len(history) > 0:
-        dwnl_path = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history_download.json")
+        dwnl_path = os.path.join(settings.USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history_download.json")
         with open(dwnl_path, "wt") as fd:
             json.dump(history[0], fd, indent=4)
         return gr.update(interactive=True, value=dwnl_path)
@@ -304,7 +303,7 @@ def load_task(task_config):
         return gr.update(visible=True), gr.update(visible=False)
 
 def store_history(request:gr.Request, history, prompt):
-    history_path = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history.json")
+    history_path = os.path.join(settings.USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history.json")
     if os.path.exists(history_path):
         with open(history_path, "rt") as fd:
             logs = json.load(fd)
@@ -319,7 +318,7 @@ def store_history(request:gr.Request, history, prompt):
 
 def upload_run_data(request: gr.Request, upload_file, history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, progress=gr.Progress()):
     gr.Info("Uploading File")
-    upload_folder = os.path.join(USER_WORKSPACES, request.username if request.username is not None else "anonymous", "uploads")
+    upload_folder = os.path.join(settings.USER_WORKSPACES, request.username if request.username is not None else "anonymous", "uploads")
     os.makedirs(upload_folder, exist_ok=True)
     shutil.copy(upload_file, upload_folder)
     gr.Info("File Uploaded")
@@ -450,7 +449,7 @@ def save_feedback(request: gr.Request, x: gr.LikeData, chatbot, system_prompt, r
         "history": remove_html_tags_and_content(chatbot[x.index[0]][x.index[1]]),
         "system_prompt": system_prompt
     }
-    path = os.path.join(USER_WORKSPACES, "user_feedback.json")
+    path = os.path.join(settings.USER_WORKSPACES, "user_feedback.json")
     if os.path.exists(path):
         with open(path, "rt") as fd:
             feedback = json.load(fd)
@@ -463,7 +462,7 @@ def save_feedback(request: gr.Request, x: gr.LikeData, chatbot, system_prompt, r
     gr.Info("Feedback saved")
 
 
-with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
+with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
     with gr.Tab("Playground"):
         with gr.Row():
             with gr.Column():
@@ -636,7 +635,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
                 )
             with gr.Row():
                 embed_name = gr.Radio(
-                    choices=list(EMBEDDING_SIZES.keys()),
+                    choices=list(settings.EMBEDDING_SIZES.keys()),
                     label="Embedder",
                 )
             with gr.Row():
@@ -645,10 +644,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
                 ingestion_in_progress = gr.Text(visible=False)
             with gr.Row():
                 upload_btt = gr.UploadButton("Select file(s) to upload...",
-                                            file_types=SUPPORTED_FILE_TYPES,
+                                            file_types=settings.SUPPORTED_FILE_TYPES,
                                             file_count="multiple",
                                             scale=0)
-                supported_extensions = ", ".join([f'*.{sft}' for sft in SUPPORTED_FILE_TYPES])
+                supported_extensions = ", ".join([f'*.{sft}' for sft in settings.SUPPORTED_FILE_TYPES])
                 supported = gr.HTML(f"<span class='description'>Supported extensions [{supported_extensions}]</span>")
             with gr.Row():
                 run_ingestion = gr.Button("Run Ingestion", scale=0)
@@ -675,4 +674,3 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=CSS, js=JS) as demo:
 demo.queue()
 # demo.launch(debug=True)
 demo.launch(debug=True, auth=authenticate)
-

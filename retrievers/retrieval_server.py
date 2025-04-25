@@ -1,16 +1,16 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import List
 from retrievers.retrievers import LanceDBRetriever
 import uvicorn
 import lancedb
 import shutil
 import os
-from settings import *
+from settings import settings
 
 
 app = FastAPI()
-vector_store = lancedb.connect(LANCEDB_DIRECTORY)
+vector_store = lancedb.connect(settings.LANCEDB_DIRECTORY)
 retriever = LanceDBRetriever(vector_store, threshold=None)
 
 
@@ -35,9 +35,9 @@ async def create_vs(
     splitting_strategy: str = Form(...)
 ):
     uploaded_files = []
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     for file in files:
-        file_location = f"{UPLOAD_DIR}/{file.filename}"
+        file_location = f"{settings.UPLOAD_DIR}/{file.filename}"
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         uploaded_files.append(file_location)

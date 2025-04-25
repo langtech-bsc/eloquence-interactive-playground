@@ -1,15 +1,17 @@
 import logging
-import os
 import time
 
-import tiktoken
 import openai
+from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.ChatGptInteractor import apx_num_tokens_from_messages
+from gradio_app.helpers import reverse_doc_links
+from settings import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+env = Environment(loader=FileSystemLoader('gradio_app/templates'))
+context_template = env.get_template('context_template.j2')
 
 
 class BSCInteractor:
@@ -22,38 +24,28 @@ class BSCInteractor:
             "top_p": top_p
         }
         self.stream = stream
-        # self.tokenizer = tiktoken.encoding_for_model(self.model_name)
-
-    def chat_completion_simple(
-            self,
-            *,
-            user_text,
-            system_text=None,
-    ):
-        return self.chat_completion(
-            self._construct_messages_simple(user_text, system_text),
-        )
-
-    def count_tokens_simple(self, *, user_text, system_text=None):
-        return self.count_tokens(self._construct_messages_simple(user_text, system_text))
-
-    @staticmethod
-    def _construct_messages_simple(user_text, system_text=None):
-        messages = []
-        if system_text is not None:
-            # messages.append({
-            #    "role": "system",
-            #    "content": system_text
-            #})
-            user_text = system_text + " " + user_text
-        messages.append({
-            "role": "user",
-            "content": user_text
-        })
+    
+    def __call__(self, documents, history, llm, system_prompt, audio=None):
+        messages = self.build_messages(documents, history, llm, system_prompt, audio)
+        return self.chat_completion(messages)
+    
+    def build_messages(self, documents, history, llm, system_prompt, audio):
+        context = ""
+        while len(documents) > 0:
+            context = context_template.render(documents=documents)
+            messages = self._construct_message_list(llm, system_prompt, context, history, audio)
+            try:
+                num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
+            except:
+                num_tokens = len(str(messages).split()) * 2
+            if num_tokens + 512 < settings.LLM_CONTEXT_LENGHTS[llm]:
+                break
+            documents.pop()
+        messages = self._construct_message_list(llm, system_prompt, context, history, audio)
         return messages
     
-    def __call__(self, messages):
-        return self.chat_completion(messages)
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        raise NotImplementedError
 
     def chat_completion(self, messages):
         logger.info(f'Sending request to {self.model_name} stream={self.stream} ...')
@@ -104,3 +96,127 @@ class BSCInteractor:
             except (openai.error.Timeout, openai.error.ServiceUnavailableError):
                 continue
         raise RuntimeError('Failed to connect to OpenAI (timeout error)')
+
+
+class OlmoInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        for q, a in history:
+            if len(a) == 0:  # the last message
+                q = system_prompt + " Context: " + context + " " + q
+            if len(a) != 0:
+                messages.append({
+                    "role": "user",
+                    "content": q,
+                })
+            elif len(a) == 0:
+                messages.append({
+                    "role": "user",
+                    "content": [
+                       {
+                           "type": "text",
+                           "text": q
+                       }
+                    ]
+
+                })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+
+
+class SalamandraInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        for q, a in history:
+            if len(a) == 0:  # the last message
+                q = system_prompt + " Context: " + context + " " + q
+            if len(a) != 0:
+                messages.append({
+                    "role": "user",
+                    "content": q,
+                })
+            elif len(a) == 0:
+                messages.append({
+                    "role": "user",
+                    "content": [
+                       {
+                           "type": "text",
+                           "text": q
+                       }
+                    ]
+
+                })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+
+
+class EurollmInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        for q, a in history:
+            if len(a) == 0:  # the last message
+                q = system_prompt + " Context: " + context + " " + q
+            if len(a) != 0:
+                messages.append({
+                    "role": "user",
+                    "content": q,
+                })
+            elif len(a) == 0:
+                messages.append({
+                    "role": "user",
+                    "content": [
+                       {
+                           "type": "text",
+                           "text": q
+                       },
+                    ]
+
+                })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+
+
+class QwenInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        prepended = False
+        for q, a in history:
+            if len(a) == 0:  # the last message
+                q = system_prompt + " Context: " + context + " " + q
+            if audio is None or len(a) != 0:
+                messages.append({
+                    "role": "user",
+                    "content": q,
+                })
+            elif len(a) == 0:
+                messages.append({
+                    "role": "user",
+                    "content": [
+                    #    {
+                    #        "type": "text",
+                    #        "text": q
+                    #    },
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": audio,
+                                "format": "wav"
+                            }
+                        }
+                    ]
+
+                })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })

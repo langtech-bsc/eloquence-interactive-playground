@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import tqdm
 
 import lancedb
@@ -9,12 +8,11 @@ import pandas as pd
 import numpy as np
 from langchain_text_splitters import CharacterTextSplitter, RecursiveCharacterTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
-from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, CSVLoader, BSHTMLLoader, TextLoader
 
 
 from gradio_app.backend.embedders import EmbedderFactory
-from settings import *
+from settings import settings
 
 def get_doc_loader(file_path):
     extension = file_path.split(".")[-1]
@@ -44,11 +42,11 @@ class LanceDBRetriever:
         embedder = self._get_embedder(index_name)
         table = self.db.open_table(index_name)
         query_vec = embedder.embed_query(query)
-        documents = table.search(query_vec, vector_column_name=VECTOR_COLUMN_NAME)
+        documents = table.search(query_vec, vector_column_name=settings.VECTOR_COLUMN_NAME)
         documents = documents.limit(top_k).to_list()
         if self.threshold:
             documents = [d for d in documents if d['_distance'] <= self.threshold]
-        documents = [doc[TEXT_COLUMN_NAME] for doc in documents]
+        documents = [doc[settings.TEXT_COLUMN_NAME] for doc in documents]
         return documents
 
     def _get_embedder(self, index_name):
@@ -69,21 +67,21 @@ class LanceDBRetriever:
         encoded = embedder.embed_documents(texts)
 
         df = pd.DataFrame({
-            VECTOR_COLUMN_NAME: encoded,
-            TEXT_COLUMN_NAME: texts,
-            METADATA: metadata,
+            settings.VECTOR_COLUMN_NAME: encoded,
+            settings.TEXT_COLUMN_NAME: texts,
+            settings.METADATA: metadata,
         })
 
         tbl.add(df)
 
     def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy):
-        db = lancedb.connect(LANCEDB_DIRECTORY)
+        db = lancedb.connect(settings.LANCEDB_DIRECTORY)
         batch_size = 128
 
         schema = pa.schema([
-            pa.field(VECTOR_COLUMN_NAME, pa.list_(pa.float32(), EMBEDDING_SIZES[embed_name])),
-            pa.field(TEXT_COLUMN_NAME, pa.string()),
-            pa.field(METADATA, pa.string()),
+            pa.field(settings.VECTOR_COLUMN_NAME, pa.list_(pa.float32(), settings.EMBEDDING_SIZES[embed_name])),
+            pa.field(settings.TEXT_COLUMN_NAME, pa.string()),
+            pa.field(settings.METADATA, pa.string()),
         ])
         tbl = db.create_table(table_name, schema=schema, mode="overwrite")
         embedder = EmbedderFactory.get_embedder(embed_name)
@@ -128,10 +126,10 @@ class LanceDBRetriever:
 
     def _load_index_config(self):
         self.index_config = {}
-        if os.path.exists(INDEX_CONFIG_PATH):
-            with open(INDEX_CONFIG_PATH, "rt") as fd:
+        if os.path.exists(settings.INDEX_CONFIG_PATH):
+            with open(settings.INDEX_CONFIG_PATH, "rt") as fd:
                 self.index_config = json.load(fd)
     
     def _save_index_config(self):
-        with open(INDEX_CONFIG_PATH, "wt") as fd:
+        with open(settings.INDEX_CONFIG_PATH, "wt") as fd:
             json.dump(self.index_config, fd, indent=4)
