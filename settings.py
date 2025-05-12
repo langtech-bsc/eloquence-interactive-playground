@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     RETRIEVER_CONFIG_PATH: str = "configurations/retrievers.json"
     USER_WORKSPACES: str = f"{PERSISTENT_DATA_ROOT}/workspaces"
     GENERIC_UPLOAD: str = f"uploads"
-    SQL_DB: str = "ip.db"
+    SQL_DB: str = f"{PERSISTENT_DATA_ROOT}/ip.db"
 
     @field_validator("AVAILABLE_LLMS", mode="before")
     def parse_available_llms(cls, v):

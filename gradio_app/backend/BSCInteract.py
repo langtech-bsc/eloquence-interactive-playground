@@ -24,9 +24,11 @@ class BSCInteractor:
             "top_p": top_p
         }
         self.stream = stream
+        logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
     
     def __call__(self, documents, history, llm, system_prompt, audio=None):
         messages = self.build_messages(documents, history, llm, system_prompt, audio)
+        logger.info(str(messages))
         return self.chat_completion(messages)
     
     def build_messages(self, documents, history, llm, system_prompt, audio):
@@ -125,6 +127,7 @@ class OlmoInteractor(BSCInteractor):
                     "role": "assistant",
                     "content": reverse_doc_links(a),
                 })
+        return messages
 
 
 class SalamandraInteractor(BSCInteractor):
@@ -150,6 +153,7 @@ class SalamandraInteractor(BSCInteractor):
                     "role": "assistant",
                     "content": reverse_doc_links(a),
                 })
+        return messages
 
 
 class EurollmInteractor(BSCInteractor):
@@ -179,6 +183,7 @@ class EurollmInteractor(BSCInteractor):
                     "role": "assistant",
                     "content": reverse_doc_links(a),
                 })
+        return messages
 
 
 class QwenInteractor(BSCInteractor):
@@ -216,3 +221,4 @@ class QwenInteractor(BSCInteractor):
                     "role": "assistant",
                     "content": reverse_doc_links(a),
                 })
+        return messages

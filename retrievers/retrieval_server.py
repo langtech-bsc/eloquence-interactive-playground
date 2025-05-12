@@ -6,6 +6,7 @@ import uvicorn
 import lancedb
 import shutil
 import os
+import argparse
 from settings import settings
 
 
@@ -57,5 +58,11 @@ async def add_to_vs(text: str, metadata: str, index_name: str):
 
 
 if __name__ == "__main__":
-    endpoint = settings.RETRIEVER_ENDPOINT.replace("http://", "").split(":")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--endpoint")
+    args = parser.parse_args()
+    if args.endpoint is None:
+        endpoint = settings.RETRIEVER_ENDPOINT.replace("http://", "").split(":")
+    else:
+        endpoint = args.endpoint.replace("http://", "").split(":")
     uvicorn.run(app, host=endpoint[0], port=int(endpoint[1]))
