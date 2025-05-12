@@ -7,6 +7,7 @@ import openai
 from jinja2 import Environment, FileSystemLoader
 
 from settings import settings
+from gradio_app.helpers import reverse_doc_links
 
 env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
@@ -195,7 +196,7 @@ class ChatGptInteractor:
             if len(a) != 0:  # some of the previous LLM answers
                 messages.append({
                     "role": "assistant",
-                    "content": a,
+                    "content": reverse_doc_links(a),
                 }) 
         return messages
 

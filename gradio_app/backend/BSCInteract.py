@@ -129,26 +129,22 @@ class OlmoInteractor(BSCInteractor):
 
 class SalamandraInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
-        messages = []
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            }
+        ]
         for q, a in history:
             if len(a) == 0:  # the last message
-                q = system_prompt + " Context: " + context + " " + q
-            if len(a) != 0:
                 messages.append({
-                    "role": "user",
-                    "content": q,
+                    "role": "system",
+                    "content": context,
                 })
-            elif len(a) == 0:
-                messages.append({
-                    "role": "user",
-                    "content": [
-                       {
-                           "type": "text",
-                           "text": q
-                       }
-                    ]
-
-                })
+            messages.append({
+                "role": "user",
+                "content": q,
+            })
             if len(a) != 0:  # some of the previous LLM answers
                 messages.append({
                     "role": "assistant",
