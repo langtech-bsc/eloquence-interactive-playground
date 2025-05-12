@@ -72,11 +72,12 @@ def upload_file(file_paths):
     return gr.update(value=", ".join(out))
 
 
-def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, splitting_strategy):
+def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, splitting_strategy, retriever_address):
     if file_paths is None or len(file_paths) == 0:
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
-    retriever["instance"].create_vs(
+    retriever = RetrieverClient(endpoint=retriever_address)
+    retriever.create_vs(
         [os.path.join(settings.GENERIC_UPLOAD, fp) for fp in file_paths],
         chunk_size,
         percentile,
@@ -86,9 +87,11 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
     gr.Info("Ingestion Done!")
 
 
-def validate_vs(index_name, embedder, uploaded_files, chunk_length, percentile):
+def validate_vs(index_name, embedder, uploaded_files, chunk_length, percentile, retriever_addr):
     if index_name is None or len(index_name) == 0:
         raise gr.Error("Please fill the index name.")
+    if retriever_addr is None or len(retriever_addr) == 0:
+        raise gr.Error("Please choose a Vector Store instance.")
     if embedder is None or len(embedder) == 0:
         raise gr.Error("Please select an embedder.")
     if uploaded_files is None or len(uploaded_files) == 0:
@@ -125,6 +128,7 @@ def get_dynamic_fields(request: gr.Request, selected_logs):
         _get_prompts(request.username),
         _get_historical_prompts(request.username),
         _get_online_models(),
+        _get_retrievers(request.username),
         _get_retrievers(request.username)
     )
 
@@ -175,7 +179,7 @@ def _get_retrievers(user):
         retrievers.update(json.load(fd))
     
     return gr.Radio(
-        label="Retriever",
+        label="Vector Store",
         choices=[(ret, addr) for ret, addr in retrievers.items()],
         
     )
@@ -553,7 +557,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                     label="Index name",
                 )
                 retrievers_radio = gr.Radio(
-                    label="Retriever"
+                    label="Vector Store"
                 )
                 task_config = gr.Radio(
                     label="Task configuration",
@@ -596,10 +600,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                         interactive=False,
                     )
 
-
-        demo.load(
-            get_dynamic_fields, [selected_logs], [task_config, selected_prompt, selected_logs, llm_name, retrievers_radio]
-        )
 
         selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
         selected_logs.change(prepare_download_history, [selected_logs], [download_btn])
@@ -645,7 +645,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
         # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
 
 
-    with gr.Tab("Ingestion"):
+    with gr.Tab("Ingestion") as ing_tab:
         with gr.Blocks():
             with gr.Row():
                 index_name = gr.Textbox(label="Index Name")
@@ -658,6 +658,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                             ("Semantic", "semantic")],
                     value="recursive",
                     scale=1
+                )
+            with gr.Row():
+                retrievers_radio_ing = gr.Radio(
+                    label="Vector Store"
                 )
             with gr.Row():
                 embed_name = gr.Radio(
@@ -677,10 +681,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                 supported = gr.HTML(f"<span class='description'>Supported extensions [{supported_extensions}]</span>")
             with gr.Row():
                 run_ingestion = gr.Button("Run Ingestion", scale=0)
-            
-
+        
+        demo.load(
+            get_dynamic_fields, [selected_logs], [task_config, selected_prompt, selected_logs, llm_name, retrievers_radio, retrievers_radio_ing]
+        )
         upload_btt.upload(upload_file, [upload_btt], [uploaded_doc])
-        run_ingestion.click(validate_vs, [index_name, embed_name, upload_btt, chunk_length, percentile]
+        run_ingestion.click(validate_vs, [index_name, embed_name, upload_btt, chunk_length, percentile, retrievers_radio_ing]
                             ).success(
                                 lambda: gr.Textbox(interactive=False,
                                                 visible=True,
@@ -691,7 +697,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                                 [ingestion_in_progress]
                             ).then(
                                 perform_ingest,
-                                [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy]
+                                [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy, retrievers_radio]
                             ).then(
                                 lambda: gr.Textbox(visible=False),
                                 [],

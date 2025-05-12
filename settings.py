@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     TOP_K_RANK: int = 50
     TOP_K_RERANK: int = 5
     SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
-    RETRIEVER_ENDPOINT: str = "http://127.0.0.1:8000"
+    RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7999"
     
     EMBEDDING_SIZES: dict = {
         "sentence-transformers/all-MiniLM-L6-v2": 384,
