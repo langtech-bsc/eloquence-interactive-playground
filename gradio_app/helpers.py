@@ -1,6 +1,5 @@
 import re
 
-
 def replace_doc_links(text):
     def repl(match):
         doc_id = match.group(1)

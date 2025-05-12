@@ -41,3 +41,9 @@ class RetrieverClient:
 
         response = requests.post(f"{self.endpoint}/create", files=files_to_upload, data=data)
         return response.status_code == 200
+    
+    def list_vs(self):
+        try:
+            return requests.get(f"{self.endpoint}/list_indices").json()["index_names"]
+        except:
+            return []

@@ -37,8 +37,7 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-vector_store = lancedb.connect(settings.LANCEDB_DIRECTORY)
-retriever = RetrieverClient(endpoint=os.environ.get("RETRIEVER_ENDPOINT", "http://127.0.0.1:8000"))
+retriever = {"instance": None}
 llm_handler = LLMHandler()
 
 
@@ -77,7 +76,7 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
     if file_paths is None or len(file_paths) == 0:
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
-    retriever.create_vs(
+    retriever["instance"].create_vs(
         [os.path.join(settings.GENERIC_UPLOAD, fp) for fp in file_paths],
         chunk_size,
         percentile,
@@ -121,13 +120,28 @@ def toggle_sidebar(state):
 
 
 def get_dynamic_fields(request: gr.Request, selected_logs):
-    return _get_tables(), _get_configs(), _get_prompts(request.username), _get_historical_prompts(request.username), _get_online_models()
+    return (
+        _get_configs(),
+        _get_prompts(request.username),
+        _get_historical_prompts(request.username),
+        _get_online_models(),
+        _get_retrievers(request.username)
+    )
+
+
+def change_retriever(selected_retr_endpoint):
+    retriever["instance"] = RetrieverClient(endpoint=selected_retr_endpoint)
+
+    return gr.Radio(
+        label="Index name",
+        choices=[t for t in retriever["instance"].list_vs()],
+    )
 
 
 def _get_online_models():
     def _check_if_online(model_name):
         gr.Info(f"Checking availability of {model_name}")
-        task_handler = get_task_handler({"interface": "text", "RAG": False, "service": "local"}, llm_handler, retriever)
+        task_handler = get_task_handler({"interface": "text", "RAG": False, "service": "local"}, llm_handler, retriever["instance"])
         query = history_user_entry = "hello, say one random words"
         history = [[history_user_entry, ""]]
         try: 
@@ -152,11 +166,18 @@ def _get_online_models():
         choices=online_choices,
     )
 
-        
-def _get_tables():
+
+def _get_retrievers(user):
+    with open(settings.RETRIEVER_CONFIG_PATH) as fd:
+        retrievers = json.load(fd)
+
+    with open(os.path.join(settings.USER_WORKSPACES, user if user is not None else "anonymous", "retrievers.json")) as fd:
+        retrievers.update(json.load(fd))
+    
     return gr.Radio(
-        label="Index name",
-        choices=[t for t in vector_store.table_names()],
+        label="Retriever",
+        choices=[(ret, addr) for ret, addr in retrievers.items()],
+        
     )
 
 
@@ -368,7 +389,7 @@ def upload_run_data(request: gr.Request, upload_file, history, input_text, audio
 
 def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
     task_config = json.loads(task_config)
-    task_handler = get_task_handler(task_config, llm_handler, retriever)
+    task_handler = get_task_handler(task_config, llm_handler, retriever["instance"])
     history = [] if history is None else history
     history_user_entry = None
     audio_in = None
@@ -527,8 +548,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                     value=300,
                     label="Max tokens",
                 )
+                
                 index_name = gr.Radio(
                     label="Index name",
+                )
+                retrievers_radio = gr.Radio(
+                    label="Retriever"
                 )
                 task_config = gr.Radio(
                     label="Task configuration",
@@ -573,7 +598,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
 
 
         demo.load(
-            get_dynamic_fields, [selected_logs], [index_name, task_config, selected_prompt, selected_logs, llm_name]
+            get_dynamic_fields, [selected_logs], [task_config, selected_prompt, selected_logs, llm_name, retrievers_radio]
         )
 
         selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
@@ -590,6 +615,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
             [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
             [chatbot, context_html, rag_column, download_result_btn]
         )
+        retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
         chatbot.like(save_feedback, [chatbot, system_prompt, context_html], None)
         # .then(
         #         lambda fn: gr.Textbox(label="Uploaded Document",

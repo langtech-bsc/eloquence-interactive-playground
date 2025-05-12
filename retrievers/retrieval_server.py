@@ -18,6 +18,11 @@ class SearchResult(BaseModel):
     documents: List[str]
 
 
+@app.get("/list_indices")
+async def list_indices():
+    return {"index_names": list(retriever.index_config.keys())}
+
+
 @app.get("/search", response_model=SearchResult)
 async def search_item(index_name: str, query: str, top_k: int = 5):
     results = retriever(index_name, query, int(top_k))
@@ -52,5 +57,5 @@ async def add_to_vs(text: str, metadata: str, index_name: str):
 
 
 if __name__ == "__main__":
-    endpoint = os.environ.get("RETRIEVER_ENDPOINT", "http://127.0.0.1:8000").replace("http://", "").split(":")
+    endpoint = settings.RETRIEVER_ENDPOINT.replace("http://", "").split(":")
     uvicorn.run(app, host=endpoint[0], port=int(endpoint[1]))
