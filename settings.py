@@ -15,7 +15,7 @@ class LLMEntry:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-    AVAILABLE_LLMS: dict
+    AVAILABLE_LLMS: dict = {}
     MARKDOWN_SOURCE_DIR: str = "data/transformers/docs/source/en/"
     PERSISTENT_DATA_ROOT: str = os.environ.get("PERSISTENT_DATA", "/app")
     LANCEDB_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/lancedb"

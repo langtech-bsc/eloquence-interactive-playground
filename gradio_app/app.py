@@ -77,6 +77,7 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
     retriever = RetrieverClient(endpoint=retriever_address)
+    logger.info("retriever_address" + str(retriever_address))
     retriever.create_vs(
         [os.path.join(settings.GENERIC_UPLOAD, fp) for fp in file_paths],
         chunk_size,
@@ -175,8 +176,10 @@ def _get_retrievers(user):
     with open(settings.RETRIEVER_CONFIG_PATH) as fd:
         retrievers = json.load(fd)
 
-    with open(os.path.join(settings.USER_WORKSPACES, user if user is not None else "anonymous", "retrievers.json")) as fd:
-        retrievers.update(json.load(fd))
+    user_retriever_conf_path = os.path.join(settings.USER_WORKSPACES, user if user is not None else "anonymous", "retrievers.json")
+    if os.path.exists(user_retriever_conf_path):
+        with open(user_retriever_conf_path) as fd:
+            retrievers.update(json.load(fd))
     
     return gr.Radio(
         label="Vector Store",
@@ -697,7 +700,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                                 [ingestion_in_progress]
                             ).then(
                                 perform_ingest,
-                                [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy, retrievers_radio]
+                                [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy, retrievers_radio_ing]
                             ).then(
                                 lambda: gr.Textbox(visible=False),
                                 [],
