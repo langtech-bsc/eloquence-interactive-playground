@@ -239,7 +239,9 @@ def transcribe(filepath):
         #     chunk_length_s=30,
         #     batch_size=8,
         # )
-        return base64.b64encode(audio).decode("utf-8")
+        encoded = base64.b64encode(audio).decode("utf-8")
+        print(encoded)
+        return encoded
     except:
         return ""
 
@@ -519,7 +521,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                         )
                         mic_transcribe = gr.Interface(
                             fn=transcribe,
-                            inputs=gr.Audio(sources="microphone", type="filepath"),
+                            inputs=gr.Audio(sources="microphone", type="filepath", streaming=True),
                             outputs=audio_input,
                             allow_flagging="never",
                             live=True
