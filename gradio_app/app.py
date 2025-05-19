@@ -17,8 +17,9 @@ import base64
 
 import gradio as gr
 import markdown
-import lancedb
+import pandas as pd
 from jinja2 import Environment, FileSystemLoader
+from bs4 import BeautifulSoup
 
 from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
@@ -88,6 +89,12 @@ def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, 
     gr.Info("Ingestion Done!")
 
 
+def extract_docs_from_rendered_template(rendered):
+    soup = BeautifulSoup(rendered, 'html.parser')
+    text_list = [div.get_text(strip=True) for div in soup.select('.doc-box')]
+    return text_list
+
+
 def validate_vs(index_name, embedder, uploaded_files, chunk_length, percentile, retriever_addr):
     if index_name is None or len(index_name) == 0:
         raise gr.Error("Please fill the index name.")
@@ -130,7 +137,8 @@ def get_dynamic_fields(request: gr.Request, selected_logs):
         _get_historical_prompts(request.username),
         _get_online_models(),
         _get_retrievers(request.username),
-        _get_retrievers(request.username)
+        _get_retrievers(request.username),
+        _get_feedback(),
     )
 
 
@@ -141,6 +149,17 @@ def change_retriever(selected_retr_endpoint):
         label="Index name",
         choices=[t for t in retriever["instance"].list_vs()],
     )
+
+
+def _get_feedback():
+    feedback_fn = os.path.join(settings.USER_WORKSPACES, "user_feedback.json")
+
+    data = []
+    if os.path.exists(feedback_fn):
+        with open(feedback_fn, "rt") as fd:
+            data = json.load(fd)
+    df = pd.DataFrame(data)
+    return gr.Dataframe(df)
 
 
 def _get_online_models():
@@ -472,12 +491,21 @@ def remove_html_tags_and_content(text):
     return re.sub(r'<[^>]*>.*?</[^>]*>', '', text, flags=re.DOTALL)
 
 
-def save_feedback(request: gr.Request, x: gr.LikeData, chatbot, system_prompt, rag):
+def show_feedback(request: gr.Request, x: gr.LikeData):
+    # This is currently not used:  x.index[0], x.index[1]
+    return gr.update(visible=True), gr.update(value=str(x.liked))
+
+
+def save_feedback(request: gr.Request, binary_feedback, chatbot, system_prompt, rag, model_name, custom_feedback):
     message = {
         "user": request.username,
-        "feedback": int(x.liked),
-        "history": remove_html_tags_and_content(chatbot[x.index[0]][x.index[1]]),
-        "system_prompt": system_prompt
+        "feedback": binary_feedback,
+        "custom_feedback": custom_feedback,
+        "model": model_name,
+        "system_prompt": system_prompt,
+        "retrieved": extract_docs_from_rendered_template(rag),
+        "generated_response": remove_html_tags_and_content(chatbot[-1][1]),
+        "history": [remove_html_tags_and_content(msg) for turn in chatbot for msg in turn]
     }
     path = os.path.join(settings.USER_WORKSPACES, "user_feedback.json")
     if os.path.exists(path):
@@ -490,6 +518,7 @@ def save_feedback(request: gr.Request, x: gr.LikeData, chatbot, system_prompt, r
     with open(path, "wt") as fd:
         feedback = json.dump(feedback, fd, indent=4)
     gr.Info("Feedback saved")
+    return gr.update(visible=False)
 
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
@@ -508,6 +537,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                     label="EloquenceBot",
                     sanitize_html=False
                 )
+                with gr.Row(visible=False) as additional_feedback:
+                    user_binary_feedback = gr.Dropdown(label="Feedback", choices=["False", "True"])
+                    user_additional_feedback = gr.Textbox(label="Additional Feedback")
+                    user_additional_feedback_submit = gr.Button(value="Submit Feedback", scale=0)
                 with gr.Row(equal_height=True):
                     with gr.Column(visible=True) as text_column:
                         input_textbox = gr.Textbox(
@@ -621,7 +654,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
             [chatbot, context_html, rag_column, download_result_btn]
         )
         retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
-        chatbot.like(save_feedback, [chatbot, system_prompt, context_html], None)
+        chatbot.like(
+            show_feedback, [], [additional_feedback, user_binary_feedback]
+        )
+        user_additional_feedback_submit.click(
+            save_feedback, [user_binary_feedback, chatbot, system_prompt, context_html, llm_name, user_additional_feedback], [additional_feedback]
+        )
         # .then(
         #         lambda fn: gr.Textbox(label="Uploaded Document",
         #                             visible=True,
@@ -686,28 +724,47 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                 supported = gr.HTML(f"<span class='description'>Supported extensions [{supported_extensions}]</span>")
             with gr.Row():
                 run_ingestion = gr.Button("Run Ingestion", scale=0)
+    
+    with gr.Tab("Feedback") as feedback_tab:
+        with gr.Row():
+            download_feedback = gr.DownloadButton(
+                        label="Download feedback",
+                        value=os.path.join(settings.USER_WORKSPACES, "user_feedback.json"),
+                        scale=0,
+                        interactive=True,
+                    )
+        feedback = gr.Dataframe()
         
-        demo.load(
-            get_dynamic_fields, [selected_logs], [task_config, selected_prompt, selected_logs, llm_name, retrievers_radio, retrievers_radio_ing]
-        )
-        upload_btt.upload(upload_file, [upload_btt], [uploaded_doc])
-        run_ingestion.click(validate_vs, [index_name, embed_name, upload_btt, chunk_length, percentile, retrievers_radio_ing]
-                            ).success(
-                                lambda: gr.Textbox(interactive=False,
-                                                visible=True,
-                                                label="Status",
-                                                elem_id="status",
-                                                value="Ingestion in progress..."),
-                                [],
-                                [ingestion_in_progress]
-                            ).then(
-                                perform_ingest,
-                                [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy, retrievers_radio_ing]
-                            ).then(
-                                lambda: gr.Textbox(visible=False),
-                                [],
-                                [ingestion_in_progress]
-                            )
+    demo.load(
+        get_dynamic_fields,
+        [selected_logs],
+        [task_config,
+            selected_prompt,
+            selected_logs,
+            llm_name,
+            retrievers_radio,
+            retrievers_radio_ing,
+            feedback
+            ]
+    )
+    upload_btt.upload(upload_file, [upload_btt], [uploaded_doc])
+    run_ingestion.click(validate_vs, [index_name, embed_name, upload_btt, chunk_length, percentile, retrievers_radio_ing]
+                        ).success(
+                            lambda: gr.Textbox(interactive=False,
+                                            visible=True,
+                                            label="Status",
+                                            elem_id="status",
+                                            value="Ingestion in progress..."),
+                            [],
+                            [ingestion_in_progress]
+                        ).then(
+                            perform_ingest,
+                            [index_name, chunk_length, percentile, embed_name, upload_btt, splitting_strategy, retrievers_radio_ing]
+                        ).then(
+                            lambda: gr.Textbox(visible=False),
+                            [],
+                            [ingestion_in_progress]
+                        )
 demo.queue()
 # demo.launch(debug=True)
 demo.launch(debug=True, auth=authenticate)
