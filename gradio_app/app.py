@@ -240,7 +240,6 @@ def transcribe(filepath):
         #     batch_size=8,
         # )
         encoded = base64.b64encode(audio).decode("utf-8")
-        print(encoded)
         return encoded
     except:
         return ""
