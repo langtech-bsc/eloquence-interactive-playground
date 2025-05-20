@@ -508,8 +508,9 @@ def process_filter_value_change(selected_col: str, selected_val: str):
         selected_val = selected_val if (selected_val is not None and selected_val != "all") else "all"
         val_dropdown = gr.Dropdown(choices=["all"] + list(feedback_df[selected_col].unique()), value=selected_val, interactive=True)
     if selected_col == "None" or selected_val == "all":
-        return gr.DataFrame(feedback_df), gr.update(), val_dropdown
-    filtered_df = feedback_df[feedback_df[selected_col]==selected_val]
+        filtered_df = feedback_df
+    else:
+        filtered_df = feedback_df[feedback_df[selected_col]==selected_val]
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8")
     filtered_df.to_json(temp_file.name, orient="records", indent=2)
     temp_file.close()
