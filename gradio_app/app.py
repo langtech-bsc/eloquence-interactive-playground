@@ -585,7 +585,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                         )
                         mic_transcribe = gr.Interface(
                             fn=transcribe,
-                            inputs=gr.Audio(sources="microphone", type="filepath", streaming=True),
+                            inputs=gr.Audio(sources="microphone", type="filepath", streaming=False),
                             outputs=audio_input,
                             allow_flagging="never",
                             live=True
