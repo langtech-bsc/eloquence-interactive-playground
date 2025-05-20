@@ -14,6 +14,7 @@ import datetime
 import time
 import re
 import base64
+import tempfile
 
 import gradio as gr
 import markdown
@@ -131,6 +132,7 @@ def toggle_sidebar(state):
 
 
 def get_dynamic_fields(request: gr.Request, selected_logs):
+    feedback, avail_columns = _get_feedback()
     return (
         _get_configs(),
         _get_prompts(request.username),
@@ -138,7 +140,8 @@ def get_dynamic_fields(request: gr.Request, selected_logs):
         _get_online_models(),
         _get_retrievers(request.username),
         _get_retrievers(request.username),
-        _get_feedback(),
+        feedback,
+        avail_columns
     )
 
 
@@ -151,15 +154,26 @@ def change_retriever(selected_retr_endpoint):
     )
 
 
-def _get_feedback():
+def _load_feedback():
     feedback_fn = os.path.join(settings.USER_WORKSPACES, "user_feedback.json")
-
     data = []
     if os.path.exists(feedback_fn):
         with open(feedback_fn, "rt") as fd:
             data = json.load(fd)
     df = pd.DataFrame(data)
-    return gr.Dataframe(df)
+    return df
+
+
+def _get_feedback():
+    df = _load_feedback()
+    return (
+        gr.Dataframe(df, interactive=False),
+        gr.Dropdown(
+            label="Filter Columns",
+            choices=["None"] + list(df.columns),
+            value="None"
+        )
+    )
 
 
 def _get_online_models():
@@ -486,6 +500,23 @@ function highlightElement(_id) {
     });
 };
 """
+   
+def process_filter_value_change(selected_col: str, selected_val: str):
+    feedback_df = _load_feedback()
+    if selected_col == "None":
+        val_dropdown = gr.Dropdown(interactive=False)
+    else:
+        selected_val = selected_val if (selected_val is not None and selected_val != "all") else "all"
+        val_dropdown = gr.Dropdown(choices=["all"] + list(feedback_df[selected_col].unique()), value=selected_val, interactive=True)
+    if selected_col == "None" or selected_val == "all":
+        return gr.DataFrame(feedback_df), gr.update(), val_dropdown
+    filtered_df = feedback_df[feedback_df[selected_col]==selected_val]
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8")
+    filtered_df.to_json(temp_file.name, orient="records", indent=2)
+    temp_file.close()
+ 
+    return gr.DataFrame(filtered_df, interactive=False), gr.update(value=temp_file.name), val_dropdown
+
 
 def remove_html_tags_and_content(text):
     return re.sub(r'<[^>]*>.*?</[^>]*>', '', text, flags=re.DOTALL)
@@ -727,13 +758,16 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
     
     with gr.Tab("Feedback") as feedback_tab:
         with gr.Row():
+            filter_column = gr.Dropdown(label="Filter Column")
+            filter_value = gr.Dropdown(label="Filter Value", interactive=False)
             download_feedback = gr.DownloadButton(
                         label="Download feedback",
                         value=os.path.join(settings.USER_WORKSPACES, "user_feedback.json"),
-                        scale=0,
+                        scale=1,
                         interactive=True,
                     )
-        feedback = gr.Dataframe()
+        with gr.Row():
+            feedback_df = gr.Dataframe()
         
     demo.load(
         get_dynamic_fields,
@@ -744,9 +778,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
             llm_name,
             retrievers_radio,
             retrievers_radio_ing,
-            feedback
+            feedback_df,
+            filter_column
             ]
     )
+    filter_column.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
+    filter_value.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
     upload_btt.upload(upload_file, [upload_btt], [uploaded_doc])
     run_ingestion.click(validate_vs, [index_name, embed_name, upload_btt, chunk_length, percentile, retrievers_radio_ing]
                         ).success(
