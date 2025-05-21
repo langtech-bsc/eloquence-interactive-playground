@@ -362,9 +362,9 @@ def reset_space():
 def load_task(task_config):
     task_config = json.loads(task_config)
     if task_config["interface"] == "audio":
-        return gr.update(visible=False), gr.update(visible=True)
+        return gr.update(visible=False), gr.update(visible=True), gr.update(interactive=False)
     else:
-        return gr.update(visible=True), gr.update(visible=False)
+        return gr.update(visible=True), gr.update(visible=False), gr.update(interactive=True)
 
 def store_history(request:gr.Request, history, prompt):
     history_path = os.path.join(settings.USER_WORKSPACES, request.username if request.username is not None else "anonymous", "history.json")
@@ -472,22 +472,65 @@ def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, ma
                )
 
 JS = """
-function Scrolldown() {
-let targetNode = document.querySelector('[aria-label="chatbot conversation"]');
-// Options for the observer (which mutations to observe)
-const config = { attributes: true, childList: true, subtree: true };
 
-// Callback function to execute when mutations are observed
-const callback = (mutationList, observer) => {
-targetNode.scrollTop = targetNode.scrollHeight;
-};
+async () => {
+    let mediaRecorder = null;
+    let socket = null;
 
-// Create an observer instance linked to the callback function
-const observer = new MutationObserver(callback);
+    globalThis.Scrolldown = function() {
+        let targetNode = document.querySelector('[aria-label="chatbot conversation"]');
+        const config = { attributes: true, childList: true, subtree: true };
 
-// Start observing the target node for configured mutations
-observer.observe(targetNode, config);
+        const callback = (mutationList, observer) => {
+        targetNode.scrollTop = targetNode.scrollHeight;
+        };
+        const observer = new MutationObserver(callback);
+        observer.observe(targetNode, config);
 
+    }
+
+    // Define the streaming function on globalThis so HTML can call it
+    globalThis.startStreaming = function() {
+        const status = document.getElementById('recordstatus');
+        status.innerText = "Opening websocket";
+        // Open WebSocket (use wss:// if your page is HTTPS)
+        socket = new WebSocket("ws://localhost:8999/ws/audio");
+        socket.addEventListener('open', () => {
+            status.innerText = "Streaming audio...";
+            // Request mic access
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    // Create MediaRecorder to capture audio
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = (event) => {
+                        // Send each audio blob if socket is open
+                        if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                            socket.send(event.data);
+                        }
+                    };
+                    // Record in 250ms chunks:contentReference[oaicite:14]{index=14}
+                    mediaRecorder.start(250);
+                })
+                .catch(err => {
+                    console.error("getUserMedia error:", err);
+                    status.innerText = "Error: " + err.name;
+                });
+        });
+    }
+
+    globalThis.stopStreaming = function() {
+        const status = document.getElementById('recordstatus');
+        console.log(mediaRecorder);
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+            status.innerText = "Recording stopped.";
+        }
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
+    }
+
+    globalThis.Scrolldown();
 }
 
 """
@@ -583,19 +626,17 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                             container=False,
                         )
                     with gr.Column(visible=False) as audio_column:
-                        audio_input = gr.Textbox(
-                            visible=False
-                        )
-                        mic_transcribe = gr.Interface(
-                            fn=transcribe,
-                            inputs=gr.Audio(sources="microphone", type="filepath", streaming=False),
-                            outputs=audio_input,
-                            allow_flagging="never",
-                            live=True
-                            # submit_btn=
-                        )
+                        hidden_submit_btn = gr.Button(visible=False, elem_id="trigger_audio_submit")
+                        html = """
+                        <button class="lg secondary  svelte-cmf5ev" onclick="startStreaming()">Start Streaming &#128266;</button>
+                        <button class="lg secondary  svelte-cmf5ev" onclick="stopStreaming();document.getElementById('trigger_audio_submit').click();">Stop Streaming</button>
+                        <p id="recordstatus">Recording stopped.</p>
+                        """
 
-                    txt_btn = gr.Button(value="Submit", scale=0)
+                        audio_object = gr.HTML(html)
+                        audio_input = gr.Textbox(visible=False)
+
+                    submit_btn = gr.Button(value="Submit", scale=0)
                     save_btn = gr.Button(value="Save current state", scale=0)
                     clear_btn = gr.Button(value="Clear space", scale=0)
 
@@ -676,7 +717,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
         selected_prompt.change(update_prompt, [selected_prompt], [system_prompt])
         selected_logs.change(prepare_download_history, [selected_logs], [download_btn])
         select_log_btn.click(load_history, [selected_logs, chatbot, system_prompt], [chatbot, system_prompt])
-        task_config.change(load_task, [task_config], [text_column, audio_column])
+        task_config.change(load_task, [task_config], [text_column, audio_column, submit_btn])
         save_btn.click(store_history, [chatbot, system_prompt], [])
         clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, rag_column])
         save_prompt_btn.click(save_prompt, [system_prompt], [])
@@ -700,7 +741,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
         #                             interactive=False,
         #                             value=fn.split("/")[-1]),
         # Turn off interactivity while generating if you click
-        txt_msg = txt_btn.click(
+        txt_msg = submit_btn.click(
             validate, [input_textbox, audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
         ).success(
             interact,
@@ -708,19 +749,15 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
             [chatbot, context_html, rag_column, input_textbox],
             api_name="llm"
         )
+        hidden_submit_btn.click(
+            interact,
+            [chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+            [chatbot, context_html, rag_column, input_textbox],
+            api_name="llm"
+        )
+
         # Turn it back on
         txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
-        # Turn off interactivity while generating if you hit enter
-        # txt_msg = input_textbox.submit(
-        #     validate, [input_textbox, llm_name, top_k, temp, top_p, index_name, system_prompt, task_config], []
-        # ).success(
-        #     add_text, [chatbot, input_textbox], [chatbot, input_textbox], queue=False
-        # ).then(
-        #     interact, [chatbot, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config], [chatbot, context_html, rag_column]
-        # )
-        # Turn it back on
-        # txt_msg.then(lambda: gr.Textbox(interactive=True), None, [input_textbox], queue=False)
-
 
     with gr.Tab("Ingestion") as ing_tab:
         with gr.Blocks():

@@ -126,6 +126,15 @@ class Settings(BaseSettings):
         color: #999999;
         font-family: "Lucida Console", "Courier New", monospace;
     }
+    #recordstatus {
+        background: rgb(242, 213, 24) !important;
+        color: black !important;
+        font-weight: bold;
+        border-radius: 4px;
+        padding: 5px;
+        max-width: 300px;
+        font-family: "Lucida Console", "Courier New", monospace;
+    }
     """
 
 settings = Settings()

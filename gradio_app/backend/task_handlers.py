@@ -43,7 +43,8 @@ class RemoteTaskHandler:
         return {k: v for k, v in params.items()}
     
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
-        payload = self._construct_payload(query=query)
+        payload = self._construct_payload(history=history, llm_name=llm_name, query=query)
+        print(payload)
         response = self.client(payload)
         if response.status_code == 200:
             response = response.json()
