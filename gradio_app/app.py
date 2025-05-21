@@ -46,7 +46,6 @@ llm_handler = LLMHandler()
 def authenticate(user, password):
     db_conn = sqlite3.connect(settings.SQL_DB).cursor()
     result = db_conn.execute(f"SELECT username FROM users WHERE username='{user}' and password='{password}'").fetchone()
-    return True
     return result and result[0] == user
 
 
