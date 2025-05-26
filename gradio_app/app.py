@@ -488,47 +488,47 @@ async () => {
         observer.observe(targetNode, config);
 
     }
-
-    // Define the streaming function on globalThis so HTML can call it
     globalThis.startStreaming = function() {
         const status = document.getElementById('recordstatus');
-        status.innerText = "Opening websocket";
-        // Open WebSocket (use wss:// if your page is HTTPS)
-        socket = new WebSocket("ws://localhost:8999/ws/audio");
-        socket.addEventListener('open', () => {
-            status.innerText = "Streaming audio...";
-            // Request mic access
-            navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(stream => {
-                    // Create MediaRecorder to capture audio
-                    mediaRecorder = new MediaRecorder(stream);
-                    mediaRecorder.ondataavailable = (event) => {
-                        // Send each audio blob if socket is open
-                        if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-                            socket.send(event.data);
-                        }
-                    };
-                    // Record in 250ms chunks:contentReference[oaicite:14]{index=14}
-                    mediaRecorder.start(250);
-                })
-                .catch(err => {
-                    console.error("getUserMedia error:", err);
-                    status.innerText = "Error: " + err.name;
-                });
-        });
-    }
+        status.innerText = "Requesting microphone access...";
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                isStreaming = true;
+
+                status.innerText = "Microphone recording... streaming audio (HTTP).";
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && isStreaming) {
+                        const formData = new FormData();
+                        formData.append("audio_chunk", event.data);
+
+                        fetch("http://84.88.53.199:8081/upload", {
+                            method: "POST",
+                            body: formData
+                        }).catch(err => {
+                            console.error("Upload error:", err);
+                        });
+                    }
+                };
+
+                mediaRecorder.start(250); // send every 250ms
+            })
+            .catch(err => {
+                console.error("getUserMedia error:", err);
+                status.innerText = "Error: " + err.name;
+            });
+    };
 
     globalThis.stopStreaming = function() {
         const status = document.getElementById('recordstatus');
-        console.log(mediaRecorder);
         if (mediaRecorder && mediaRecorder.state !== "inactive") {
             mediaRecorder.stop();
+            isStreaming = false;
             status.innerText = "Recording stopped.";
         }
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.close();
-        }
-    }
+    };
 
     globalThis.Scrolldown();
 }

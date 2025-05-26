@@ -2,5 +2,5 @@
     "name": "Audio",
     "RAG": false,
     "interface": "audio",
-    "service": "remote-http://127.0.0.1:8999/respond"
+    "service": "remote-http://84.88.53.199:8081/respond"
 }

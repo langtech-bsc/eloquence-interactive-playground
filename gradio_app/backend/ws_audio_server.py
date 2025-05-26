@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile
 import uvicorn
 import base64
 from pydantic import BaseModel
@@ -51,6 +51,17 @@ async def audio_stream(websocket: WebSocket):
         except Exception as e:
             print("Connection closed:", e)
             break
+
+
+@app.post("/upload")
+async def upload_audio(audio_chunk: UploadFile):
+    global buffer
+    data = await audio_chunk.read()
+    buffer.extend(data)
+    # process or store `data` as needed
+    print(f"Received {len(data)} bytes of audio; total is {len(buffer)}")
+    return {"status": "ok"}
+
 
 @app.post("/respond", response_model=Response)
 async def respond(request: Request):
