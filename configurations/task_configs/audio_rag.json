@@ -2,5 +2,5 @@
     "name": "Audio",
     "RAG": false,
     "interface": "audio",
-    "service": "remote-http://localhost:8080/respond"
+    "service": "local"
 }

@@ -4,7 +4,7 @@ WORKDIR /usr/src/app
 
 RUN apt update
 RUN apt install curl -y
-RUN apt install iputils-ping -y
+RUN apt install iputils-ping ffmpeg -y
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --no-deps -r requirements.txt

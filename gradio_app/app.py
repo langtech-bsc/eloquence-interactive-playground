@@ -24,6 +24,9 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI, UploadFile
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from pydub import AudioSegment
+from io import BytesIO
+
 
 from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
@@ -42,7 +45,7 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-cache = {"retriever_instance": None, "feedback_df": None}
+cache = {"retriever_instance": None, "feedback_df": None, "audio_buffer": []}
 llm_handler = LLMHandler()
 
 
@@ -61,6 +64,25 @@ examples = [
     "give me all information about the GPUS",
     "Do you prefer cats or dogs?"
 ]
+
+
+def bytes_to_wav(audio_bytes):
+    audio = AudioSegment.from_file(BytesIO(audio_bytes), format="webm")  # or "ogg", "mp4", etc.
+    wav_io = BytesIO()
+    audio.export(wav_io, format="wav")
+    return wav_io.getvalue()
+
+
+def encode_audio_stream(audio):
+    try:
+        audio = bytes(audio)
+        audio = bytes_to_wav(audio)
+        encoded = base64.b64encode(audio).decode("utf-8")
+        return encoded
+    except Exception as e:
+        import sys
+        print(e, file=sys.stderr)
+        return ""
 
 
 ############# FOR VS Creation #########
@@ -440,9 +462,10 @@ def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, ma
     history_user_entry = None
     audio_in = None
     if task_config["interface"] == "audio":
-        audio_in = audio_input
+        audio_in = encode_audio_stream(cache["audio_buffer"])
         query = "Describe the audio."
         history_user_entry = query
+        cache["audio_buffer"] = []
     else:
         history_user_entry = input_text
         query = input_text
@@ -858,7 +881,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-audio_buffer = []
 class Request(BaseModel):
     history: list[list[str]]
     llm_name: str
@@ -870,35 +892,14 @@ class Response(BaseModel):
     documents: list[str]
 
 
-def encode_audio_stream(audio):
-    try:
-        audio = bytes(audio)
-        encoded = base64.b64encode(audio).decode("utf-8")
-        return encoded
-    except:
-        return ""
 
 
 @app.post("/stream")
 async def upload_audio(audio_chunk: UploadFile):
-    global audio_buffer
     data = await audio_chunk.read()
-    audio_buffer.extend(data)
-    logger.info(f"Received {len(data)} bytes of audio; total is {len(audio_buffer)}")
+    cache["audio_buffer"].extend(data)
     return {"status": "ok"}
 
-
-@app.post("/respond", response_model=Response)
-async def respond(request: Request):
-    global audio_buffer
-    response = []
-    for part in llm_handler(request.llm_name, "", request.history, [], audio=encode_audio_stream(audio_buffer)):
-        response.extend(part)
-    audio_buffer = []
-    return Response(
-        text="".join(response),
-        documents=[]
-    )
 
 app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
 
