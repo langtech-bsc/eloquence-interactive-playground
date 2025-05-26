@@ -21,6 +21,9 @@ import markdown
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 from bs4 import BeautifulSoup
+from fastapi import FastAPI, UploadFile
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
@@ -504,7 +507,7 @@ async () => {
                         const formData = new FormData();
                         formData.append("audio_chunk", event.data);
 
-                        fetch("http://84.88.53.199:8081/upload", {
+                        fetch("https://eloquence.lt.bsc.es/stream", {
                             method: "POST",
                             body: formData
                         }).catch(err => {
@@ -842,6 +845,63 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                             [],
                             [ingestion_in_progress]
                         )
-demo.queue()
+# demo.queue()
 # demo.launch(debug=True)
-demo.launch(debug=True, auth=authenticate)
+# app = demo.launch(debug=True, auth=authenticate, prevent_thread_lock=True)
+app = FastAPI()
+
+# Add CORS middleware if needed
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+audio_buffer = []
+class Request(BaseModel):
+    history: list[list[str]]
+    llm_name: str
+    query: str
+
+
+class Response(BaseModel):
+    text: str
+    documents: list[str]
+
+
+def encode_audio_stream(audio):
+    try:
+        audio = bytes(audio)
+        encoded = base64.b64encode(audio).decode("utf-8")
+        return encoded
+    except:
+        return ""
+
+
+@app.post("/stream")
+async def upload_audio(audio_chunk: UploadFile):
+    global audio_buffer
+    data = await audio_chunk.read()
+    audio_buffer.extend(data)
+    logger.info(f"Received {len(data)} bytes of audio; total is {len(audio_buffer)}")
+    return {"status": "ok"}
+
+
+@app.post("/respond", response_model=Response)
+async def respond(request: Request):
+    global audio_buffer
+    response = []
+    for part in llm_handler(request.llm_name, "", request.history, [], audio=encode_audio_stream(audio_buffer)):
+        response.extend(part)
+    audio_buffer = []
+    return Response(
+        text="".join(response),
+        documents=[]
+    )
+
+app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("gradio_app.app:app", host="0.0.0.0", port=int(os.environ.get("GRADIO_SERVER_PORT", "8080")), reload=True)
