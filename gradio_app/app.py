@@ -178,10 +178,10 @@ def change_retriever(selected_retr_endpoint):
     )
 
 
-def _load_feedback():
+def _load_feedback(force=False):
     feedback_fn = os.path.join(settings.USER_WORKSPACES, "user_feedback.json")
     data = []
-    if "feedback_df" in cache and cache["feedback_df"] is not None:
+    if not force and "feedback_df" in cache and cache["feedback_df"] is not None:
         return cache["feedback_df"]
     if os.path.exists(feedback_fn):
         with open(feedback_fn, "rt") as fd:
@@ -192,7 +192,7 @@ def _load_feedback():
 
 
 def _get_feedback():
-    df = _load_feedback()
+    df = _load_feedback(force=True)
     return (
         gr.Dataframe(df, interactive=False),
         gr.Dropdown(
