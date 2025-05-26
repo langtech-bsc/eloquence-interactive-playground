@@ -31,6 +31,11 @@ def encode_audio_stream(audio):
         return ""
 
 
+@app.get("/test")
+async def list_indices():
+    return "OK!"
+
+
 @app.websocket("/ws/audio")
 async def audio_stream(websocket: WebSocket):
     await websocket.accept()
@@ -61,4 +66,4 @@ async def respond(request: Request):
     )
 
 if __name__ == "__main__":
-    uvicorn.run("gradio_app.backend.ws_audio_server:app", host="0.0.0.0", port=8999, reload=True)
+    uvicorn.run("gradio_app.backend.ws_audio_server:app", host="0.0.0.0", port=8081, reload=True)

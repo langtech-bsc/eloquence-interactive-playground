@@ -65,6 +65,6 @@ if not os.path.exists(settings.SQL_DB):
         ("yulia", "test")
     ]:
         os.makedirs(os.path.join(settings.USER_WORKSPACES, user), exist_ok=True)
-    cur.execute(f"INSERT INTO users VALUES ('{user}', '{passwd}')")
-    con.commit()
-    con.close()
+        cur.execute(f"INSERT INTO users VALUES ('{user}', '{passwd}')")
+        con.commit()
+        con.close()
