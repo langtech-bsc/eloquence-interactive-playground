@@ -28,7 +28,6 @@ class BSCInteractor:
     
     def __call__(self, documents, history, llm, system_prompt, audio=None):
         messages = self.build_messages(documents, history, llm, system_prompt, audio)
-        logger.info(str(messages))
         return self.chat_completion(messages)
     
     def build_messages(self, documents, history, llm, system_prompt, audio):
@@ -52,7 +51,11 @@ class BSCInteractor:
     def chat_completion(self, messages):
         logger.info(f'Sending request to {self.model_name} stream={self.stream} ...')
         t1 = time.time()
-        completion = self._request(messages)
+        try:
+            completion = self._request(messages)
+        except:
+            logger.error("Failed generating response!")
+            return ""
 
         if self.stream:
             return self._generator(completion)

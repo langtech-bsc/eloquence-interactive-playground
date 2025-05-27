@@ -132,7 +132,11 @@ class ChatGptInteractor:
     def chat_completion(self, messages):
         logger.info(f'Sending request to {self.model_name} stream={self.stream} ...')
         t1 = time.time()
-        completion = self._request(messages)
+        try:
+            completion = self._request(messages)
+        except:
+            logger.error("Failed generating response.")
+            return ""
 
         if self.stream:
             return self._generator(completion)
