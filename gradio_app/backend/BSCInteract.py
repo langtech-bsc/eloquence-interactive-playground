@@ -5,7 +5,7 @@ import openai
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.ChatGptInteractor import apx_num_tokens_from_messages
-from gradio_app.helpers import reverse_doc_links
+from gradio_app.helpers import reverse_doc_links, encode_audio_stream
 from settings import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -212,7 +212,7 @@ class QwenInteractor(BSCInteractor):
                         {
                             "type": "input_audio",
                             "input_audio": {
-                                "data": audio,
+                                "data": encode_audio_stream(audio),
                                 "format": "wav"
                             }
                         }

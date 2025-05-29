@@ -15,24 +15,26 @@ import time
 import re
 import base64
 import tempfile
+from copy import deepcopy
+from typing import *
 
 import gradio as gr
 import markdown
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, UploadFile
-from pydantic import BaseModel
+from fastapi import FastAPI, UploadFile, Form, File
+from pydantic import TypeAdapter
 from fastapi.middleware.cors import CORSMiddleware
-from pydub import AudioSegment
-from io import BytesIO
 
 
 from gradio_app.backend.query_llm import LLMHandler
 from gradio_app.backend.task_handlers import get_task_handler
+from gradio_app.helpers import replace_doc_links
+from gradio_app.messages import *
+
 from retrievers.client import RetrieverClient
 from settings import settings
-from gradio_app.helpers import replace_doc_links
 
 # Setting up the logging
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +47,13 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-cache = {"retriever_instance": None, "feedback_df": None, "audio_buffer": []}
+dynamic_data = {
+    "retriever_instance": None,
+    "feedback_df": None,
+    "audio_buffer": []
+}
+ALL_AVAILABLE_LLMS = list(settings.AVAILABLE_LLMS.keys()) + ["gpt-3.5-turbo"]
+
 llm_handler = LLMHandler()
 
 
@@ -66,25 +74,6 @@ examples = [
 ]
 
 
-def bytes_to_wav(audio_bytes):
-    audio = AudioSegment.from_file(BytesIO(audio_bytes), format="webm")  # or "ogg", "mp4", etc.
-    wav_io = BytesIO()
-    audio.export(wav_io, format="wav")
-    return wav_io.getvalue()
-
-
-def encode_audio_stream(audio):
-    try:
-        audio = bytes(audio)
-        audio = bytes_to_wav(audio)
-        encoded = base64.b64encode(audio).decode("utf-8")
-        return encoded
-    except Exception as e:
-        import sys
-        print(e, file=sys.stderr)
-        return ""
-
-
 ############# FOR VS Creation #########
 def upload_file(file_paths):
     out = []
@@ -98,19 +87,21 @@ def upload_file(file_paths):
     return gr.update(value=", ".join(out))
 
 
-def perform_ingest(index_name, chunk_size, percentile,  embed_name, file_paths, splitting_strategy, retriever_address):
+def perform_ingest(index_name, chunk_size, percentile, embed_name, file_paths, splitting_strategy, retriever_address):
     if file_paths is None or len(file_paths) == 0:
         raise gr.Error("You must uplaod at least one file first")
     gr.Info("Ingesting the documents")
     retriever = RetrieverClient(endpoint=retriever_address)
     logger.info("retriever_address" + str(retriever_address))
+    uploaded_files = [os.path.join(settings.GENERIC_UPLOAD, fp) for fp in file_paths]
     retriever.create_vs(
-        [os.path.join(settings.GENERIC_UPLOAD, fp) for fp in file_paths],
+        uploaded_files,
         chunk_size,
         percentile,
         embed_name,
         index_name,
         splitting_strategy)
+    shutil.rmtree(settings.GENERIC_UPLOAD, ignore_errors=True)
     gr.Info("Ingestion Done!")
 
 
@@ -157,37 +148,40 @@ def toggle_sidebar(state):
 
 def get_dynamic_fields(request: gr.Request, selected_logs):
     feedback, avail_columns = _get_feedback()
+    task_configs_radio, _ = _get_task_configs()
+    retrievers_radio, _ = _get_retrievers(request.username)
+    online_choices, _ = _get_online_models()
     return (
-        _get_configs(),
+        task_configs_radio,
         _get_prompts(request.username),
         _get_historical_prompts(request.username),
-        _get_online_models(),
-        _get_retrievers(request.username),
-        _get_retrievers(request.username),
+        online_choices,
+        retrievers_radio,
+        retrievers_radio,
         feedback,
         avail_columns
     )
 
 
 def change_retriever(selected_retr_endpoint):
-    cache["retriever_instance"] = RetrieverClient(endpoint=selected_retr_endpoint)
+    dynamic_data["retriever_instance"] = RetrieverClient(endpoint=selected_retr_endpoint)
 
     return gr.Radio(
         label="Index name",
-        choices=[t for t in cache["retriever_instance"].list_vs()],
+        choices=[t for t in dynamic_data["retriever_instance"].list_vs()],
     )
 
 
 def _load_feedback(force=False):
     feedback_fn = os.path.join(settings.USER_WORKSPACES, "user_feedback.json")
     data = []
-    if not force and "feedback_df" in cache and cache["feedback_df"] is not None:
-        return cache["feedback_df"]
+    if not force and "feedback_df" in dynamic_data and dynamic_data["feedback_df"] is not None:
+        return dynamic_data["feedback_df"]
     if os.path.exists(feedback_fn):
         with open(feedback_fn, "rt") as fd:
             data = json.load(fd)
     df = pd.DataFrame(data)
-    cache["feedback_df"] = df
+    dynamic_data["feedback_df"] = df
     return df
 
 
@@ -206,7 +200,7 @@ def _get_feedback():
 def _get_online_models():
     def _check_if_online(model_name):
         gr.Info(f"Checking availability of {model_name}")
-        task_handler = get_task_handler({"interface": "text", "RAG": False, "service": "local"}, llm_handler, cache["retriever_instance"])
+        task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data["retriever_instance"])
         query = history_user_entry = "hello, say one random words"
         history = [[history_user_entry, ""]]
         try: 
@@ -229,7 +223,7 @@ def _get_online_models():
     return gr.Radio(
         label="Available LLMs",
         choices=online_choices,
-    )
+    ), [choice[1] for choice in online_choices]
 
 
 def _get_retrievers(user):
@@ -245,7 +239,7 @@ def _get_retrievers(user):
         label="Vector Store",
         choices=[(ret, addr) for ret, addr in retrievers.items()],
         
-    )
+    ), retrievers
 
 
 def _get_prompts(user):
@@ -273,7 +267,7 @@ def save_prompt(request: gr.Request, prompt):
     gr.Info("Prompt saved successfully!")
 
 
-def _get_configs():
+def _get_task_configs():
     configs = []
     for fn in os.listdir(settings.TASK_CONFIG_DIR):
         with open(os.path.join(settings.TASK_CONFIG_DIR, fn), "rt") as fd:
@@ -282,28 +276,7 @@ def _get_configs():
     return gr.Radio(
         label="Task configuration",
         choices=configs,
-    )
-
-
-def transcribe(filepath):
-    try:
-        with open(filepath, "rb") as fd:
-            audio = fd.read()
-        # output = pipe(
-        #     filepath,
-        #     max_new_tokens=256,
-        #     generate_kwargs={
-        #         "task": "transcribe",
-        #         "language": "english",
-        #     },  # update with the language you've fine-tuned on
-        #     chunk_length_s=30,
-        #     batch_size=8,
-        # )
-        encoded = base64.b64encode(audio).decode("utf-8")
-        return encoded
-    except:
-        return ""
-
+    ), configs
 
 
 def _get_historical_prompts(user):
@@ -322,10 +295,10 @@ def update_prompt(selected_prompt):
     return selected_prompt
 
 
-def validate(text, audio, llm, top_k, temp, top_p, index_name, system_prompt, task_config):
-    if len(text) == 0 and len(audio) == 0:
+def validate(text, llm, top_k, temp, top_p, index_name, task_config):
+    if len(text) == 0:
         raise gr.Error("Empty query")
-    if llm not in list(settings.AVAILABLE_LLMS.keys()) + ["gpt-3.5-turbo"]:
+    if llm not in ALL_AVAILABLE_LLMS:
         raise gr.Error("Unknown LLM")
     
     def _check_float(val, bmin, bmax):
@@ -405,7 +378,7 @@ def store_history(request:gr.Request, history, prompt):
     gr.Info(f"History Saved for '{request.username}'")
 
 
-def upload_run_data(request: gr.Request, upload_file, history, input_text, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, progress=gr.Progress()):
+def upload_run_data(request: gr.Request, upload_file, history, input_text, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, progress=gr.Progress()):
     gr.Info("Uploading File")
     upload_folder = os.path.join(settings.USER_WORKSPACES, request.username if request.username is not None else "anonymous", "uploads")
     os.makedirs(upload_folder, exist_ok=True)
@@ -422,7 +395,7 @@ def upload_run_data(request: gr.Request, upload_file, history, input_text, audio
                      context_html, 
                      gr_rag_update,
                      gr_textbox,
-                     docs) in interact(history, turn, audio_input, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
+                     docs) in interact(history, turn, llm_name, top_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
                     yield (partial_history,
                            context_html,
                            gr_rag_update,
@@ -455,17 +428,17 @@ def upload_run_data(request: gr.Request, upload_file, history, input_text, audio
                 )
 
 
-def interact(history, input_text, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
+def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config):
     task_config = json.loads(task_config)
-    task_handler = get_task_handler(task_config, llm_handler, cache["retriever_instance"])
+    task_handler = get_task_handler(task_config, llm_handler, dynamic_data["retriever_instance"])
     history = [] if history is None else history
     history_user_entry = None
     audio_in = None
     if task_config["interface"] == "audio":
-        audio_in = encode_audio_stream(cache["audio_buffer"])
+        audio_in = deepcopy(dynamic_data["audio_buffer"])
         query = "Describe the audio."
         history_user_entry = query
-        cache["audio_buffer"] = []
+        dynamic_data["audio_buffer"] = []
     else:
         history_user_entry = input_text
         query = input_text
@@ -570,7 +543,8 @@ function highlightElement(_id) {
     });
 };
 """
-   
+
+
 def process_filter_value_change(selected_col: str, selected_val: str):
     feedback_df = _load_feedback()
     if selected_col == "None":
@@ -660,7 +634,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
                         """
 
                         audio_object = gr.HTML(html)
-                        audio_input = gr.Textbox(visible=False)
 
                     submit_btn = gr.Button(value="Submit", scale=0)
                     save_btn = gr.Button(value="Save current state", scale=0)
@@ -748,10 +721,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
         clear_btn.click(reset_space, [], [chatbot, system_prompt, selected_prompt, rag_column])
         save_prompt_btn.click(save_prompt, [system_prompt], [])
         upload_data_btt.upload(
-            validate, [gr.Textbox("dummy", visible=False), audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
+            validate, [gr.Textbox("dummy", visible=False), llm_name, docs_k, temp, top_p, index_name, task_config], []
         ).success(
             upload_run_data,
-            [upload_data_btt, chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+            [upload_data_btt, chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
             [chatbot, context_html, rag_column, download_result_btn]
         )
         retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
@@ -768,16 +741,16 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=JS) as demo:
         #                             value=fn.split("/")[-1]),
         # Turn off interactivity while generating if you click
         txt_msg = submit_btn.click(
-            validate, [input_textbox, audio_input, llm_name, docs_k, temp, top_p, index_name, system_prompt, task_config], []
+            validate, [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config], []
         ).success(
             interact,
-            [chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+            [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
             [chatbot, context_html, rag_column, input_textbox],
             api_name="llm"
         )
         hidden_submit_btn.click(
             interact,
-            [chatbot, input_textbox, audio_input, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+            [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
             [chatbot, context_html, rag_column, input_textbox],
             api_name="llm"
         )
@@ -881,24 +854,128 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class Request(BaseModel):
-    history: list[list[str]]
-    llm_name: str
-    query: str
 
+async def query_llm_general(audio_file=None, **kwargs):
+    if kwargs["llm_name"] not in ALL_AVAILABLE_LLMS:
+        return ResponseQueryLLM(text="", documents=[], error="Unknown LLM")
+    
+    _, task_configs = _get_task_configs()
+    task_configs = {k: json.loads(v) for k, v in task_configs}
+    task_config = task_configs.get(kwargs["task_config"], settings.BASIC_CONFIG)
+    retriever_address = kwargs["retriever_address"] if kwargs["retriever_address"] != "public" else settings.RETRIEVER_ENDPOINT
+    task_handler = get_task_handler(task_config, llm_handler, RetrieverClient(endpoint=retriever_address))
+    history = [] if kwargs["history"] is None else kwargs["history"]
+    history_user_entry = None
+    audio_in = None
+    if task_config["interface"] == "audio":
+        if audio_file:
+            audio_in = await audio_file.read()
+        else:
+            audio_in = dynamic_data["audio_buffer"]
+        query = "Describe the audio."
+        history_user_entry = query
+        dynamic_data["audio_buffer"] = []
+    else:
+        history_user_entry = kwargs["input_text"]
+        query = kwargs["input_text"]
 
-class Response(BaseModel):
-    text: str
-    documents: list[str]
+    if not query:
+        raise gr.Error("Empty string was submitted")
 
+    history += [[history_user_entry, ""]]
 
+    received = []
+    for part, documents in task_handler(kwargs["llm_name"],
+                                        kwargs["system_prompt"],
+                                        history,
+                                        query,
+                                        kwargs["docs_k"],
+                                        kwargs["index_name"],
+                                        temperature=kwargs["temp"],
+                                        top_p=kwargs["top_p"],
+                                        max_tokens=kwargs["max_tokens"],
+                                        audio=audio_in):
+        received += part
+    return "".join(received), documents
 
 
 @app.post("/stream")
 async def upload_audio(audio_chunk: UploadFile):
     data = await audio_chunk.read()
-    cache["audio_buffer"].extend(data)
+    dynamic_data["audio_buffer"].extend(data)
     return {"status": "ok"}
+
+
+@app.post("/query", response_model=ResponseQueryLLM)
+async def query_llm(body: str = Form(...), audio_file: Optional[UploadFile] = File(None)):
+    request = TypeAdapter(RequestQueryLLM).validate_json(body)
+    response, documents = await query_llm_general(audio_file=audio_file, **request.__dict__)
+    return ResponseQueryLLM(text=response, documents=documents)
+
+
+@app.post("/batch_query", response_model=ResponseBatchQuery)
+async def batch_query(body: str = Form(...), data_file: UploadFile = File(None)):
+    batch_data = json.loads(await data_file.read())
+    request = TypeAdapter(RequestBatchQuery).validate_json(body)
+    processed_data = {}
+    for conv, turns in batch_data.items():
+        history = []
+        for turn in turns:
+            response, _ = await query_llm_general(audio_file=None, input_text=turn, history=deepcopy(history), **request.__dict__)
+            history.append([turn, response])
+        processed_data[conv] = history
+    
+    return ResponseBatchQuery(processed=processed_data)
+
+
+@app.post("/ingest", response_model=ResponseIngest)
+async def ingest(content_file: UploadFile, body: str = Form(...)):
+    request = TypeAdapter(RequestIngest).validate_json(body)
+    try:
+        with tempfile.NamedTemporaryFile(delete=True, suffix=content_file.filename) as tmp:
+            shutil.copyfileobj(content_file.file, tmp)
+            temp_file_path = tmp.name
+            perform_ingest(request.index_name,
+                        request.chunk_size,
+                        request.percentile,
+                        request.embed_name,
+                        [temp_file_path],
+                        request.splitting_strategy,
+                        request.retriever_address)
+        return ResponseIngest(status="success", msg="Document ingested successfully")
+    except Exception as e:
+        return ResponseIngest(status="error", msg=str(e))
+
+
+@app.get("/list_vs", response_model=ResponseList)
+async def list_available_stores(request: RequestListVS):
+    retriever = RetrieverClient(endpoint=request.retriever_address)
+    stores = retriever.list_vs()
+    return ResponseList(available=stores)
+
+
+@app.get("/list_llms", response_model=ResponseList)
+def list_available_llms():
+    _, online_models = _get_online_models()
+    return ResponseList(available=online_models)
+
+
+@app.get("/list_embedders", response_model=ResponseList)
+def list_available_embedders():
+    return ResponseList(available=list(settings.EMBEDDING_SIZES.keys()))
+
+
+@app.get("/get_feedback", response_model=ResponseFeedback)
+def download_feedback(request: RequestFeedback):
+    feedback_df = _load_feedback(force=True)
+    filt = ""
+    if request.filter_column and request.filter_value:
+        if request.filter_column in feedback_df.columns:
+            filt = f"{request.filter_column}='{request.filter_value}'"
+            feedback_df = feedback_df[feedback_df[request.filter_column] == request.filter_value]
+    
+    collected_feedback = feedback_df.to_dict(orient="records")
+    return ResponseFeedback(filter=filt, feedback=collected_feedback)
 
 
 app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
