@@ -1,8 +1,10 @@
 import requests
-
+from settings import settings
 
 class RetrieverClient:
     def __init__(self, endpoint):
+        if endpoint == "public":
+            endpoint = settings.RETRIEVER_ENDPOINT
         self.endpoint = endpoint
     
     def search(self, index_name, query, top_k=5):
