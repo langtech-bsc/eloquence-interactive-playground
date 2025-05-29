@@ -1,4 +1,47 @@
 import re
+import base64
+
+from pydub import AudioSegment
+from io import BytesIO
+
+def detect_audio_format(data: bytes) -> str:
+    if data.startswith(b'RIFF') and data[8:12] == b'WAVE':
+        return "wav"
+    elif data.startswith(b'OggS'):
+        return "ogg"
+    elif data.startswith(b'fLaC'):
+        return "flac"
+    elif data.startswith(b'ID3') or data[:2] == b'\xff\xfb':
+        return "mp3"
+    elif data.startswith(b'\x1A\x45\xDF\xA3'):
+        # This could be WebM or Matroska; you'd need deeper parsing to confirm
+        return "webm"
+    elif data.startswith(b'\x52\x49\x46\x46') and data[8:12] == b'AVI ':
+        return "avi"  # Not audio-only but sometimes confused
+    else:
+        return "unknown"
+
+
+def bytes_to_wav(audio_bytes, original_format):
+    audio = AudioSegment.from_file(BytesIO(audio_bytes), format=original_format)
+    wav_io = BytesIO()
+    audio.export(wav_io, format="wav")
+    return wav_io.getvalue()
+
+
+def encode_audio_stream(audio):
+    try:
+        audio = bytes(audio)
+        audio_format = detect_audio_format(audio)
+        if audio_format != "wav":
+            audio = bytes_to_wav(audio, audio_format)
+        encoded = base64.b64encode(audio).decode("utf-8")
+        return encoded
+    except Exception as e:
+        import sys
+        print(e, file=sys.stderr)
+        return ""
+
 
 def replace_doc_links(text):
     def repl(match):

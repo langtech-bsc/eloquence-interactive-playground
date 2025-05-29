@@ -28,16 +28,15 @@ class Settings(BaseSettings):
     TOP_K_RERANK: int = 5
     SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
     RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7999"
+    BASIC_CONFIG: dict = {"interface": "text", "RAG": False, "service": "local"}
     
     EMBEDDING_SIZES: dict = {
         "sentence-transformers/all-MiniLM-L6-v2": 384,
         "sentence-transformers/all-mpnet-base-v2": 768,
-        "text-embedding-ada-002": 1536,
     }
 
     THRESHOLD_DISTANCES: dict = {
         "sentence-transformers/all-MiniLM-L6-v2": 1.2,
-        "text-embedding-ada-002": 0.5,
     }
 
     LLM_CONTEXT_LENGHTS: dict = {
