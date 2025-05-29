@@ -948,8 +948,8 @@ async def ingest(content_file: UploadFile, body: str = Form(...)):
 
 
 @app.get("/list_vs", response_model=ResponseList)
-async def list_available_stores(request: RequestListVS):
-    retriever = RetrieverClient(endpoint=request.retriever_address)
+async def list_available_stores(retriever_address: Optional[str] = "public"):
+    retriever = RetrieverClient(endpoint=retriever_address)
     stores = retriever.list_vs()
     return ResponseList(available=stores)
 
@@ -965,14 +965,24 @@ def list_available_embedders():
     return ResponseList(available=list(settings.EMBEDDING_SIZES.keys()))
 
 
-@app.get("/get_feedback", response_model=ResponseFeedback)
-def download_feedback(request: RequestFeedback):
+@app.get("/retrieval", response_model=ResponseList)
+def get_retrieval(query: str,
+                  index_name: str,
+                  retriever_address: Optional[str] = "public",
+                  top_k: Optional[int] = 5):
+    retriever = RetrieverClient(endpoint=retriever_address)
+    docs = retriever.search(index_name=index_name, query=query, top_k=top_k)
+    return ResponseList(available=docs)
+
+
+@app.get("/feedback", response_model=ResponseFeedback)
+def download_feedback(filter_column: Optional[str] = None, filter_value: Optional[str] = None):
     feedback_df = _load_feedback(force=True)
     filt = ""
-    if request.filter_column and request.filter_value:
-        if request.filter_column in feedback_df.columns:
-            filt = f"{request.filter_column}='{request.filter_value}'"
-            feedback_df = feedback_df[feedback_df[request.filter_column] == request.filter_value]
+    if filter_column and filter_value:
+        if filter_column in feedback_df.columns:
+            filt = f"{filter_column}='{filter_value}'"
+            feedback_df = feedback_df[feedback_df[filter_column] == filter_value]
     
     collected_feedback = feedback_df.to_dict(orient="records")
     return ResponseFeedback(filter=filt, feedback=collected_feedback)

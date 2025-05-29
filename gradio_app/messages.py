@@ -37,15 +37,6 @@ class RequestIngest(BaseModel):
     retriever_address: Optional[str] = "public"
 
 
-class RequestListVS(BaseModel):
-    retriever_address: str = "public"
-
-
-class RequestFeedback(BaseModel):
-    filter_column: Optional[str] = None
-    filter_value: Optional[str] = None
-
-
 class ResponseQueryLLM(BaseModel):
     text: str
     documents: List[str]
