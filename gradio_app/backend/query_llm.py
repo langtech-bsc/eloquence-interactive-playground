@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 
 from settings import settings
 from gradio_app.backend.ChatGptInteractor import ChatGptInteractor
@@ -17,7 +18,8 @@ class LLMHandler:
         llm = self._cache.get(llm_name, None)
         audio = None
         if "audio" in params and params["audio"] is not None:
-            audio = params["audio"]
+            audio = deepcopy(params["audio"])
+            del params["audio"]
         if llm is None:
             llm = LLMHandler.get_llm_generator(llm_name)
             self._cache[llm_name] = llm
