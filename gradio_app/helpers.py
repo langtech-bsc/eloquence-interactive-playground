@@ -33,6 +33,8 @@ def encode_audio_stream(audio):
     try:
         audio = bytes(audio)
         audio_format = detect_audio_format(audio)
+        print(audio)
+        print(audio_format)
         if audio_format != "wav":
             audio = bytes_to_wav(audio, audio_format)
         encoded = base64.b64encode(audio).decode("utf-8")

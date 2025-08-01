@@ -60,7 +60,9 @@ llm_handler = LLMHandler()
 def authenticate(user, password):
     db_conn = sqlite3.connect(settings.SQL_DB).cursor()
     result = db_conn.execute(f"SELECT username FROM users WHERE username='{user}' and password='{password}'").fetchone()
-    return result and result[0] == user
+    success = result and result[0] == user
+    print(f"Login: {success}")
+    return success
 
 
 # Examples
@@ -434,14 +436,11 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
     history = [] if history is None else history
     history_user_entry = None
     audio_in = None
+    history_user_entry = input_text
+    query = input_text
     if task_config["interface"] == "audio":
         audio_in = deepcopy(dynamic_data["audio_buffer"])
-        query = "Describe the audio."
-        history_user_entry = query
         dynamic_data["audio_buffer"] = []
-    else:
-        history_user_entry = input_text
-        query = input_text
 
     if not query:
         raise gr.Error("Empty string was submitted")
@@ -885,6 +884,7 @@ async def query_llm_general(audio_file=None, **kwargs):
     history += [[history_user_entry, ""]]
 
     received = []
+    documents = []
     for part, documents in task_handler(kwargs["llm_name"],
                                         kwargs["system_prompt"],
                                         history,

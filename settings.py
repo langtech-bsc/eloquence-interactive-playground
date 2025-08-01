@@ -54,10 +54,10 @@ class Settings(BaseSettings):
         "text-embedding-ada-002": 1000,  # actual context length is 8191, but it's too much
     }
 
-    INDEX_CONFIG_PATH: str = "configurations/indexes.json"
-    PROMPTS_PATH: str = "configurations/prompts.json"
-    TASK_CONFIG_DIR: str = "configurations/task_configs/"
-    RETRIEVER_CONFIG_PATH: str = "configurations/retrievers.json"
+    INDEX_CONFIG_PATH: str = f"{PERSISTENT_DATA_ROOT}/configurations/indexes.json"
+    PROMPTS_PATH: str = f"{PERSISTENT_DATA_ROOT}/configurations/prompts.json"
+    TASK_CONFIG_DIR: str = f"{PERSISTENT_DATA_ROOT}/configurations/task_configs/"
+    RETRIEVER_CONFIG_PATH: str = f"{PERSISTENT_DATA_ROOT}/configurations/retrievers.json"
     USER_WORKSPACES: str = f"{PERSISTENT_DATA_ROOT}/workspaces"
     GENERIC_UPLOAD: str = f"uploads"
     SQL_DB: str = f"{PERSISTENT_DATA_ROOT}/ip.db"

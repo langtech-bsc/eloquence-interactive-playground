@@ -94,7 +94,7 @@ class BSCInteractor:
                     messages=messages,
                     model=self.model_name,
                     stream=self.stream,
-                    request_timeout=100.0,
+                    request_timeout=10.0,
                     **self.generate_kwargs
                 )
                 return completion
@@ -206,9 +206,9 @@ class QwenInteractor(BSCInteractor):
                     "role": "user",
                     "content": [
                     #    {
-                    #        "type": "text",
-                    #        "text": q
-                    #    },
+                      #      "type": "text",
+                     #       "text": q
+                     #   },
                         {
                             "type": "input_audio",
                             "input_audio": {
