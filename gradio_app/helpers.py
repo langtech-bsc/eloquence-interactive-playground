@@ -1,8 +1,16 @@
 import re
+import os
 import base64
+import json
+from typing import Optional, Any, List
 
+from bs4 import BeautifulSoup
 from pydub import AudioSegment
 from io import BytesIO
+
+from settings import settings
+ANONYMOUS_USER = "anonymous"
+
 
 def detect_audio_format(data: bytes) -> str:
     if data.startswith(b'RIFF') and data[8:12] == b'WAVE':
@@ -69,3 +77,36 @@ def reverse_doc_links(html):
 
     # Match <a ...>[n]</a> where n is a number
     return re.sub(r'<a [^>]*href="#(\d+)"[^>]*>\[\d+\]</a>', repl, html)
+
+
+def _get_user_workspace(user: Optional[str]) -> str:
+    """Returns the workspace directory for a given user."""
+    return os.path.join(settings.USER_WORKSPACES, user if user else ANONYMOUS_USER)
+
+def _get_user_filepath(user: Optional[str], filename: str) -> str:
+    """Constructs the full path to a user-specific file."""
+    workspace = _get_user_workspace(user)
+    os.makedirs(workspace, exist_ok=True)
+    return os.path.join(workspace, filename)
+
+def _load_json(filepath: str, default: Any = []) -> Any:
+    """Loads data from a JSON file, returning a default if it doesn't exist."""
+    if os.path.exists(filepath):
+        with open(filepath, "rt", encoding="utf-8") as f:
+            return json.load(f)
+    return default
+
+def _save_json(filepath: str, data: Any):
+    """Saves data to a JSON file with indentation."""
+    with open(filepath, "wt", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+def extract_docs_from_rendered_template(rendered_html: str) -> List[str]:
+    """Extracts document text from the rendered HTML context."""
+    soup = BeautifulSoup(rendered_html, 'html.parser')
+    return [div.get_text(strip=True) for div in soup.select('.doc-box')]
+
+def remove_html_tags(text: str) -> str:
+    """Removes HTML tags and their content from a string."""
+    return re.sub(r'<[^>]*>.*?</[^>]*>', '', text, flags=re.DOTALL)
+

@@ -1,8 +1,11 @@
 import os
-import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
+USER_FEEDBACK_FILE = "user_feedback.json"
+USER_HISTORY_FILE = "history.json"
+USER_PROMPTS_FILE = "prompts.json"
+USER_RETRIEVERS_FILE = "retrievers.json"
 
 class LLMEntry:
 
@@ -81,6 +84,12 @@ class Settings(BaseSettings):
         border-radius: 6px;
         max-height:4em;
     }
+    #ingestion_status, #ingestion_status textarea {
+        background: #f27618;
+        color: #ffffff;
+        padding: 2px
+        border-radius: 6px;
+    }
     .svelte-1mhtq7j {
         background: #565553 !important;
         color: white;
@@ -135,5 +144,71 @@ class Settings(BaseSettings):
         font-family: "Lucida Console", "Courier New", monospace;
     }
     """
+    JS_CODE: str = """
+async () => {
+    let mediaRecorder = null;
+    let socket = null;
+    let isStreaming = false;
+
+    // Auto-scroll the chatbot window
+    globalThis.Scrolldown = function() {
+        const targetNode = document.querySelector('[aria-label="chatbot conversation"]');
+        if (!targetNode) return;
+
+        const config = { attributes: true, childList: true, subtree: true };
+        const callback = (mutationList, observer) => {
+            targetNode.scrollTop = targetNode.scrollHeight;
+        };
+        const observer = new MutationObserver(callback);
+        observer.observe(targetNode, config);
+    };
+
+    // Start streaming audio from the microphone
+    globalThis.startStreaming = function() {
+        const status = document.getElementById('recordstatus');
+        status.innerText = "Requesting microphone access...";
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                isStreaming = true;
+                status.innerText = "Microphone recording... streaming audio.";
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && isStreaming) {
+                        const formData = new FormData();
+                        formData.append("audio_chunk", event.data);
+
+                        fetch("https://eloquence.lt.bsc.es/stream", {
+                            method: "POST",
+                            body: formData
+                        }).catch(err => {
+                            console.error("Audio upload error:", err);
+                            status.innerText = "Error during streaming.";
+                        });
+                    }
+                };
+                mediaRecorder.start(250); // Send data every 250ms
+            })
+            .catch(err => {
+                console.error("getUserMedia error:", err);
+                status.innerText = "Error: " + err.name;
+            });
+    };
+
+    // Stop streaming audio
+    globalThis.stopStreaming = function() {
+        const status = document.getElementById('recordstatus');
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+            isStreaming = false;
+            status.innerText = "Recording stopped.";
+        }
+    };
+
+    // Initialize auto-scroll
+    globalThis.Scrolldown();
+}
+"""
 
 settings = Settings()

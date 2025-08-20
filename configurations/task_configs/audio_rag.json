@@ -1,6 +1,0 @@
-{
-    "name": "Audio",
-    "RAG": false,
-    "interface": "audio",
-    "service": "local"
-}
