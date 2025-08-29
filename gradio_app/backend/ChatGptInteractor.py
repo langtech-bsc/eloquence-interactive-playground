@@ -4,6 +4,7 @@ import time
 
 import tiktoken
 import openai
+import tenacity
 from jinja2 import Environment, FileSystemLoader
 
 from settings import settings
@@ -82,6 +83,11 @@ class ChatGptInteractor:
         }
         self.stream = stream
         self.tokenizer = tiktoken.encoding_for_model(self.model_name)
+        self.api_endpoint = "https://api.openai.com/v1"
+        self.client = openai.OpenAI(
+            api_key=OPENAI_KEY,
+            base_url=self.api_endpoint
+        )
 
     def chat_completion_simple(
             self,
@@ -130,7 +136,7 @@ class ChatGptInteractor:
         return messages
 
     def chat_completion(self, messages):
-        logger.info(f'Sending request to {self.model_name} stream={self.stream} ...')
+        logger.info(f'Sending request to Openai model {self.model_name} stream={self.stream} ...')
         t1 = time.time()
         try:
             completion = self._request(messages)
@@ -142,16 +148,16 @@ class ChatGptInteractor:
             return self._generator(completion)
 
         t2 = time.time()
-        usage = completion['usage']
+        usage = completion.usage
         logger.info(
-            f'Received response: {usage["prompt_tokens"]} in + {usage["completion_tokens"]} out'
-            f' = {usage["total_tokens"]} total tokens. Time: {t2 - t1:3.1f} seconds'
+            f'Received response: {usage.prompt_tokens} in + {usage.completion_tokens} out'
+            f' = {usage.total_tokens} total tokens. Time: {t2 - t1:3.1f} seconds'
         )
-        return completion.choices[0].message['content']
+        return completion.choices[0].message.content
 
     @staticmethod
     def get_stream_text(stream_part):
-        return stream_part['choices'][0]['delta'].get('content', '')
+        return stream_part.choices[0].delta.get("content", "")
 
     @staticmethod
     def _generator(completion):
@@ -164,35 +170,27 @@ class ChatGptInteractor:
     def set_params(self, **params):
         self.generate_kwargs.update(params)
 
+    @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=4, max=10), stop=tenacity.stop_after_attempt(3))
     def _request(self, messages):
-        openai.api_base = "https://api.openai.com/v1"
-        for _ in range(5):
-            try:
-                completion = openai.ChatCompletion.create(
-                    messages=messages,
-                    model=self.model_name,
-                    stream=self.stream,
-                    request_timeout=100.0,
-                    **self.generate_kwargs
-                )
-                return completion
-            except (openai.error.Timeout, openai.error.ServiceUnavailableError):
-                continue
-        raise RuntimeError('Failed to connect to OpenAI (timeout error)')
+        logger.info(self.api_endpoint + " " + self.model_name)
+        logger.info(len(messages))
+        logger.info(str([m['role'] for m in messages]))
+        completion = self.client.chat.completions.create(
+            messages=messages,
+            model=self.model_name,
+            stream=False,
+            **self.generate_kwargs
+        )
+        return completion
     
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         messages = [
             {
                 "role": "system",
-                "content": system_prompt,
+                "content": system_prompt + "\n" + context,
             }
         ]
         for q, a in history:
-            if len(a) == 0:  # the last message
-                messages.append({
-                    "role": "system",
-                    "content": context,
-                })
             messages.append({
                 "role": "user",
                 "content": q,
@@ -232,7 +230,7 @@ if __name__ == '__main__':
     print(cgi.chat_completion_simple(user_text=ut, system_text=st))
     print('---')
 
-    cgi = ChatGptInteractor(stream=True)
+    cgi = ChatGptInteractor()
     for part in cgi.chat_completion_simple(user_text=ut, system_text=st):
         print(part, end='')
     print('\n---')

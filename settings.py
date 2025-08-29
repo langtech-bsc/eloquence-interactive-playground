@@ -4,6 +4,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
 
+SUPPORTED_LLMS = {
+    "gpt-3.5-turbo": "text",
+    "olmo" : "text",
+    "euro": "text",
+    "salamandra": "text",
+    "qwen": "audio",
+    "whisper": "audio"
+}
 class LLMEntry:
 
     def __init__(self, llm_entry):
@@ -49,6 +57,7 @@ class Settings(BaseSettings):
         "EuroLLM": 4096,
         "Salamandra (MN5)": 8196,
         "Salamandra (MN5)": 8196,
+        "Salamandra (HF)": 8196,
         "sentence-transformers/all-MiniLM-L6-v2": 128,
         "thenlper/gte-large": 512,
         "text-embedding-ada-002": 1000,  # actual context length is 8191, but it's too much

@@ -2,6 +2,7 @@ import logging
 import time
 
 import openai
+import tenacity
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.ChatGptInteractor import apx_num_tokens_from_messages
@@ -24,6 +25,10 @@ class BSCInteractor:
             "top_p": top_p
         }
         self.stream = stream
+        self.client = openai.OpenAI(
+            base_url=self.api_endpoint,
+            api_key="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"
+        )
         logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
     
     def __call__(self, documents, history, llm, system_prompt, audio=None):
@@ -61,16 +66,19 @@ class BSCInteractor:
             return self._generator(completion)
 
         t2 = time.time()
-        usage = completion['usage']
+        if "usage" in completion:
+            usage = completion.usage
+        else:
+            usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         logger.info(
             f'Received response: {usage["prompt_tokens"]} in + {usage["completion_tokens"]} out'
             f' = {usage["total_tokens"]} total tokens. Time: {t2 - t1:3.1f} seconds'
         )
-        return completion.choices[0].message['content']
+        return completion.choices[0].message.content
 
     @staticmethod
     def get_stream_text(stream_part):
-        return stream_part['choices'][0]['delta'].get('content', '')
+        return stream_part.choices[0].delta.get('content', '')
 
     @staticmethod
     def _generator(completion):
@@ -83,24 +91,19 @@ class BSCInteractor:
     def set_params(self, **params):
         self.generate_kwargs.update(params)
 
+    @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=4, max=10), stop=tenacity.stop_after_attempt(3))
     def _request(self, messages):
-        openai.api_base = self.api_endpoint
         logger.info(self.api_endpoint + " " + self.model_name)
         logger.info(len(messages))
         logger.info(str([m['role'] for m in messages]))
-        for _ in range(5):
-            try:
-                completion = openai.ChatCompletion.create(
-                    messages=messages,
-                    model=self.model_name,
-                    stream=self.stream,
-                    request_timeout=10.0,
-                    **self.generate_kwargs
-                )
-                return completion
-            except (openai.error.Timeout, openai.error.ServiceUnavailableError):
-                continue
-        raise RuntimeError('Failed to connect to OpenAI (timeout error)')
+        completion = self.client.chat.completions.create(
+            model="tgi",
+            messages=messages,
+            stream=self.stream,
+            **self.generate_kwargs
+        )
+
+        return completion
 
 
 class OlmoInteractor(BSCInteractor):
@@ -192,7 +195,6 @@ class EurollmInteractor(BSCInteractor):
 class QwenInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         messages = []
-        prepended = False
         for q, a in history:
             if len(a) == 0:  # the last message
                 q = system_prompt + " Context: " + context + " " + q
@@ -216,6 +218,57 @@ class QwenInteractor(BSCInteractor):
                                 "format": "wav"
                             }
                         }
+                    ]
+
+                })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+        return messages
+
+
+class SalamandraInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt + " Context: " + context,
+            }
+        ]
+        for q, a in history:
+            messages.append({
+                "role": "user",
+                "content": q,
+            })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+        return messages
+
+
+class WhisperInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        for q, a in history:
+            if len(a) == 0:  # the last message
+                q = system_prompt + " Context: " + context + " " + q
+            if len(a) != 0:
+                messages.append({
+                    "role": "user",
+                    "content": q,
+                })
+            elif len(a) == 0:
+                messages.append({
+                    "role": "user",
+                    "content": [
+                       {
+                           "type": "text",
+                           "text": q
+                       },
                     ]
 
                 })
