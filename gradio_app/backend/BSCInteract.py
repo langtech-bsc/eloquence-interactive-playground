@@ -16,7 +16,7 @@ context_template = env.get_template('context_template.j2')
 
 
 class BSCInteractor:
-    def __init__(self, api_endpoint, model_name, max_tokens=None, temperature=None, top_p=None, stream=False):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
         self.model_name = model_name
         self.api_endpoint = api_endpoint
         self.generate_kwargs = {
@@ -27,7 +27,7 @@ class BSCInteractor:
         self.stream = stream
         self.client = openai.OpenAI(
             base_url=self.api_endpoint,
-            api_key="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"
+            api_key=api_key
         )
         logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
     
@@ -66,13 +66,10 @@ class BSCInteractor:
             return self._generator(completion)
 
         t2 = time.time()
-        if "usage" in completion:
-            usage = completion.usage
-        else:
-            usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        usage = completion.usage
         logger.info(
-            f'Received response: {usage["prompt_tokens"]} in + {usage["completion_tokens"]} out'
-            f' = {usage["total_tokens"]} total tokens. Time: {t2 - t1:3.1f} seconds'
+            f'Received response: {usage.prompt_tokens} in + {usage.completion_tokens} out'
+            f' = {usage.total_tokens} total tokens. Time: {t2 - t1:3.1f} seconds'
         )
         return completion.choices[0].message.content
 
@@ -97,7 +94,7 @@ class BSCInteractor:
         logger.info(len(messages))
         logger.info(str([m['role'] for m in messages]))
         completion = self.client.chat.completions.create(
-            model="tgi",
+            model=self.model_name,
             messages=messages,
             stream=self.stream,
             **self.generate_kwargs

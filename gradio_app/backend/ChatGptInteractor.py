@@ -13,18 +13,6 @@ from gradio_app.helpers import reverse_doc_links
 env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 
-OPENAI_KEY = None
-key_file = 'data/openaikey.txt'
-if os.path.exists(key_file):
-    with open(key_file) as f:
-        OPENAI_KEY = f.read().strip()
-
-if OPENAI_KEY is None:
-    OPENAI_KEY = os.getenv('OPENAI_KEY')
-
-openai.api_key = OPENAI_KEY
-
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -74,7 +62,7 @@ def apx_num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613"):
 
 
 class ChatGptInteractor:
-    def __init__(self, model_name='gpt-3.5-turbo', max_tokens=None, temperature=None, top_p=None, stream=False):
+    def __init__(self, model_name='gpt-3.5-turbo', api_endpoint=None, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
         self.model_name = model_name
         self.generate_kwargs = {
             "temperature": temperature,
@@ -83,9 +71,10 @@ class ChatGptInteractor:
         }
         self.stream = stream
         self.tokenizer = tiktoken.encoding_for_model(self.model_name)
-        self.api_endpoint = "https://api.openai.com/v1"
+        self.api_endpoint = api_endpoint
+        print("Using endpoint:", api_endpoint, api_key)
         self.client = openai.OpenAI(
-            api_key=OPENAI_KEY,
+            api_key=api_key,
             base_url=self.api_endpoint
         )
 
@@ -117,22 +106,22 @@ class ChatGptInteractor:
         return messages
     
     def __call__(self, documents, history, llm, system_prompt, audio=None):
-        messages = self.build_messages(documents, history, llm, system_prompt, audio)
+        messages = self.build_messages(documents, history, system_prompt, audio)
         return self.chat_completion(messages)
     
-    def build_messages(self, documents, history, llm, system_prompt, audio):
+    def build_messages(self, documents, history, system_prompt, audio):
         context = ""
         while len(documents) > 0:
             context = context_template.render(documents=documents)
-            messages = self._construct_message_list(llm, system_prompt, context, history, audio)
+            messages = self._construct_message_list(system_prompt, context, history, audio)
             try:
                 num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
             except:
                 num_tokens = len(str(messages).split()) * 2
-            if num_tokens + 512 < settings.LLM_CONTEXT_LENGHTS[llm]:
+            if num_tokens + 512 < settings.LLM_CONTEXT_LENGHTS[self.model_name]:
                 break
             documents.pop()
-        messages = self._construct_message_list(llm, system_prompt, context, history, audio)
+        messages = self._construct_message_list(system_prompt, context, history, audio)
         return messages
 
     def chat_completion(self, messages):
@@ -183,7 +172,7 @@ class ChatGptInteractor:
         )
         return completion
     
-    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+    def _construct_message_list(self, system_prompt, context, history, audio):
         messages = [
             {
                 "role": "system",

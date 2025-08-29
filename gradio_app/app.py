@@ -33,15 +33,13 @@ from gradio_app.app_handlers import (
     get_dynamic_components,
     _get_online_models,
     _load_feedback_df,
-    _get_feedback_df,
     dynamic_data,
+    llm_handler,
 )
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-ALL_AVAILABLE_LLMS = list(settings.AVAILABLE_LLMS.keys()) + ["gpt-3.5-turbo"]
 
 def show_feedback(request: gr.Request, x: gr.LikeData):
     # This is currently not used:  x.index[0], x.index[1]
@@ -82,9 +80,9 @@ def authenticate(user: str, password: str) -> bool:
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-async def query_llm_general(audio_file=None, **kwargs):
+async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
-    if kwargs["llm_name"] not in ALL_AVAILABLE_LLMS:
+    if kwargs["llm_name"] not in available_llms.keys():
         return ResponseQueryLLM(text="", documents=[], error="Unknown LLM")
     
     _, task_configs_list = _get_task_configs()
@@ -129,7 +127,7 @@ async def upload_audio_chunk(audio_chunk: UploadFile):
 async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadFile] = File(None)):
     """Primary endpoint for submitting a single query to the LLM."""
     request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
-    response_text, documents = await query_llm_general(audio_file=audio_file, **request_data.model_dump())
+    response_text, documents = await query_llm_general(available_llms=llm_handler.available_llms, audio_file=audio_file, **request_data.model_dump())
     return ResponseQueryLLM(text=response_text, documents=documents)
 
 
@@ -143,7 +141,7 @@ async def batch_query_endpoint(body: str = Form(...), data_file: UploadFile = Fi
     for conv_id, turns in batch_data.items():
         history = []
         for turn in turns:
-            response_text, _ = await query_llm_general(input_text=turn, history=deepcopy(history), **request_data.model_dump())
+            response_text, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
             history.append([turn, response_text])
         processed_data[conv_id] = history
     

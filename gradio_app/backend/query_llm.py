@@ -10,8 +10,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class LLMHandler:
-    def __init__(self) -> None:
-        self.known_llms = ["GPT-3.5"] + [llm.model for llm in settings.AVAILABLE_LLMS.values()]
+    def __init__(self, available_llms) -> None:
+        logger.info(f"Available LLMs: {list(available_llms.keys())}")
+        self.available_llms = available_llms
         self._cache = {}
     
     def __call__(self, llm_name, system_prompt, history, documents, **params):
@@ -21,7 +22,7 @@ class LLMHandler:
             audio = deepcopy(params["audio"])
             del params["audio"]
         if llm is None:
-            llm = LLMHandler.get_llm_generator(llm_name)
+            llm = self.get_llm_generator(llm_name)
             self._cache[llm_name] = llm
         llm.set_params(**params)
         try:
@@ -30,47 +31,42 @@ class LLMHandler:
         except:
             raise RuntimeError
         
-    @staticmethod
-    def get_llm_generator(model_name):
+    def get_llm_generator(self, model_name):
+        model_entry = self.available_llms[model_name]
         if "gpt" in model_name.lower():
             cgi = ChatGptInteractor(
-                model_name=model_name, max_tokens=512, temperature=0, stream=False
+                model_name=model_entry["model_name"], max_tokens=512, temperature=0, stream=False, api_endpoint=model_entry["api_endpoint"], api_key=model_entry.get("api_key", None)
             )
             return cgi
         elif model_name in ["meta-llama/Meta-Llama-3-8B", "mistralai/Mistral-7B-Instruct-v0.1"]:
             hfg = HuggingfaceGenerator(
-                model_name=model_name, temperature=0, max_new_tokens=512,
+                model_name=model_entry["model_name"], temperature=0, max_new_tokens=512, api_endpoint=model_entry["api_endpoint"], api_key=model_entry.get("api_key", None)
             )
             return hfg
-        elif model_name in settings.AVAILABLE_LLMS:
+        elif model_name in self.available_llms.keys():
             if "olmo" in  model_name.lower():
-                model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = OlmoInteractor(
-                    api_endpoint=model_entry.endpoint, model_name=model_entry.model
+                    api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )
                 return cgi
             if "euro" in  model_name.lower():
-                model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = EurollmInteractor(
-                    api_endpoint=model_entry.endpoint, model_name=model_entry.model
+                    api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )
                 return cgi
             if "salamandra" in  model_name.lower():
-                model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = SalamandraInteractor(
-                    api_endpoint=model_entry.endpoint, model_name=model_entry.model
+                    api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )
                 return cgi
             if "qwen" in  model_name.lower():
-                model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = QwenInteractor(
-                    api_endpoint=model_entry.endpoint, model_name=model_entry.model
+                    api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )
                 return cgi
             if "whisper" in  model_name.lower():
-                model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = WhisperInteractor(
-                    api_endpoint=model_entry.endpoint, model_name=model_entry.model
+                    api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )
                 return cgi
             else:

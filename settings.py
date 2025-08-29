@@ -7,14 +7,6 @@ USER_HISTORY_FILE = "history.json"
 USER_PROMPTS_FILE = "prompts.json"
 USER_RETRIEVERS_FILE = "retrievers.json"
 
-SUPPORTED_LLMS = {
-    "gpt-3.5-turbo": "text",
-    "olmo" : "text",
-    "euro": "text",
-    "salamandra": "text",
-    "qwen": "audio",
-    "whisper": "audio"
-}
 class LLMEntry:
 
     def __init__(self, llm_entry):
@@ -26,7 +18,6 @@ class LLMEntry:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-    AVAILABLE_LLMS: dict = {}
     MARKDOWN_SOURCE_DIR: str = "data/transformers/docs/source/en/"
     PERSISTENT_DATA_ROOT: str = os.environ.get("PERSISTENT_DATA", "/app")
     LANCEDB_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/lancedb"
@@ -70,16 +61,10 @@ class Settings(BaseSettings):
     PROMPTS_PATH: str = f"{PERSISTENT_DATA_ROOT}/configurations/prompts.json"
     TASK_CONFIG_DIR: str = f"{PERSISTENT_DATA_ROOT}/configurations/task_configs/"
     RETRIEVER_CONFIG_PATH: str = f"{PERSISTENT_DATA_ROOT}/configurations/retrievers.json"
+    MODELS_PATH: str = f"{PERSISTENT_DATA_ROOT}/configurations/models.json"
     USER_WORKSPACES: str = f"{PERSISTENT_DATA_ROOT}/workspaces"
     GENERIC_UPLOAD: str = f"uploads"
     SQL_DB: str = f"{PERSISTENT_DATA_ROOT}/ip.db"
-
-    @field_validator("AVAILABLE_LLMS", mode="before")
-    def parse_available_llms(cls, v):
-        # os.environ.get("OPENAI_API_ENDPOINT_URLs", "[]")
-        avail = [LLMEntry(entry) for entry in v]
-        return {entry.name: entry for entry in avail}
-
 
     CSS: str = """
     button.secondary {

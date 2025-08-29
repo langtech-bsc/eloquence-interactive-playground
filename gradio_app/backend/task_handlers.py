@@ -15,7 +15,7 @@ class LocalTaskHandler:
         self.task_config = task_config
         
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
-        if not check_llm_interface(llm_name, self.task_config["interface"]):
+        if not check_llm_interface(llm_name, self.task_config["interface"], available_llms=self.llm_handler.available_llms):
             raise ValueError(f"LLM {llm_name} does not support the required interface {self.task_config['interface']}.")
         documents = [""]
         if self.task_config["RAG"]:

@@ -25,7 +25,11 @@ dynamic_data = {
     "feedback_df": None,
     "audio_buffer": []
 }
-llm_handler = LLMHandler()
+with open(settings.MODELS_PATH) as f:
+    available_llms = json.load(f)
+    available_llms = {model["display_name"]: model for model in available_llms}
+llm_handler = LLMHandler(available_llms)
+
 # --- Jinja2 Templates ---
 env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
@@ -120,13 +124,13 @@ def validate_ingestion_inputs(index_name, embedder, files, chunk_length, percent
         raise gr.Error("'Percentile' must be an integer between 1 and 100.")
 
 # --- Playground Tab ---
-def get_dynamic_components(request: gr.Request):
+def get_dynamic_components(request: gr.Request) -> tuple:
     """Loads all dynamic data (prompts, history, etc.) when the UI loads."""
     user = request.username
     feedback_df, avail_cols = _get_feedback_df()
     task_configs_radio, _ = _get_task_configs()
     retrievers_radio, _ = _get_retrievers(user)
-    online_choices, _ = _get_online_models()
+    online_choices, _ = _get_online_models(llm_handler.available_llms)
     
     return (
         task_configs_radio,
@@ -278,13 +282,25 @@ def _get_historical_prompts(user: str):
     logs = _load_json(filepath)
     return gr.Dropdown(label="History", choices=[p["name"] for p in logs])
 
-def _get_online_models():
-    # This check can be slow. Consider caching results or a simpler check.
+def _get_online_models(available_llms):
     def _is_model_online(model_name):
-        # A simple placeholder check; the original logic can be re-inserted if needed.
-        # This avoids slow startup times.
         return True
+        gr.Info(f"Checking availability of {model_name}")
+        task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data["retriever_instance"])
+        query = history_user_entry = "hello, say one random words"
+        history = [[history_user_entry, ""]]
+        try: 
+            for part, documents in task_handler(model_name,
+                                                "",
+                                                history,
+                                                query,
+                                                0,
+                                                "index_name",
+                                                max_tokens=2):
+                return True
+        except Exception as e:
+            return False
 
-    choices = [("GPT-3.5", "gpt-3.5-turbo")] + [(llm.name, llm.name) for llm in settings.AVAILABLE_LLMS.values()]
+    choices = [(llm, llm) for llm in available_llms.keys()]
     online_choices = [choice for choice in choices if _is_model_online(choice[1])]
     return gr.Radio(label="Available LLMs", choices=online_choices), [c[1] for c in online_choices]
