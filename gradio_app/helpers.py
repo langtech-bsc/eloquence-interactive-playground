@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from pydub import AudioSegment
 from io import BytesIO
 
-from settings import settings
+from settings import settings, SUPPORTED_LLMS
 ANONYMOUS_USER = "anonymous"
 
 
@@ -37,12 +37,17 @@ def bytes_to_wav(audio_bytes, original_format):
     return wav_io.getvalue()
 
 
+def check_llm_interface(llm: str, interface: str) -> bool:
+    """Checks if the given LLM supports the specified interface."""
+    for supported_llm, supported_interface in SUPPORTED_LLMS.items():
+        if supported_llm.lower() in llm.lower():
+            return supported_interface == interface
+
+
 def encode_audio_stream(audio):
     try:
         audio = bytes(audio)
         audio_format = detect_audio_format(audio)
-        print(audio)
-        print(audio_format)
         if audio_format != "wav":
             audio = bytes_to_wav(audio, audio_format)
         encoded = base64.b64encode(audio).decode("utf-8")

@@ -4,7 +4,7 @@ from copy import deepcopy
 from settings import settings
 from gradio_app.backend.ChatGptInteractor import ChatGptInteractor
 from gradio_app.backend.HuggingfaceGenerator import HuggingfaceGenerator
-from gradio_app.backend.BSCInteract import OlmoInteractor, EurollmInteractor, QwenInteractor, SalamandraInteractor, QwenInteractor
+from gradio_app.backend.BSCInteract import OlmoInteractor, EurollmInteractor, QwenInteractor, SalamandraInteractor, QwenInteractor, WhisperInteractor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class LLMHandler:
     def get_llm_generator(model_name):
         if "gpt" in model_name.lower():
             cgi = ChatGptInteractor(
-                model_name=model_name, max_tokens=512, temperature=0, stream=True
+                model_name=model_name, max_tokens=512, temperature=0, stream=False
             )
             return cgi
         elif model_name in ["meta-llama/Meta-Llama-3-8B", "mistralai/Mistral-7B-Instruct-v0.1"]:
@@ -49,7 +49,7 @@ class LLMHandler:
                     api_endpoint=model_entry.endpoint, model_name=model_entry.model
                 )
                 return cgi
-            elif "euro" in  model_name.lower():
+            if "euro" in  model_name.lower():
                 model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = EurollmInteractor(
                     api_endpoint=model_entry.endpoint, model_name=model_entry.model
@@ -64,6 +64,12 @@ class LLMHandler:
             if "qwen" in  model_name.lower():
                 model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = QwenInteractor(
+                    api_endpoint=model_entry.endpoint, model_name=model_entry.model
+                )
+                return cgi
+            if "whisper" in  model_name.lower():
+                model_entry = settings.AVAILABLE_LLMS[model_name]
+                cgi = WhisperInteractor(
                     api_endpoint=model_entry.endpoint, model_name=model_entry.model
                 )
                 return cgi

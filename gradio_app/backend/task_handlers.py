@@ -1,5 +1,5 @@
 import requests
-
+from gradio_app.helpers import check_llm_interface
 
 def get_task_handler(config, llm, retriver):
     if "local" in config["service"]:
@@ -15,6 +15,8 @@ class LocalTaskHandler:
         self.task_config = task_config
         
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
+        if not check_llm_interface(llm_name, self.task_config["interface"]):
+            raise ValueError(f"LLM {llm_name} does not support the required interface {self.task_config['interface']}.")
         documents = [""]
         if self.task_config["RAG"]:
             documents = self.retriever.search(index_name, query, docs_k)

@@ -271,11 +271,11 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
                     
                     with gr.Row():
-                        selected_prompt = gr.Dropdown(label="Load Saved Prompt")
+                        selected_prompt = gr.Dropdown(label="Load Saved Prompt", interactive=True)
                         save_prompt_btn = gr.Button("Save Prompt")
-                    
+
                     with gr.Row():
-                        selected_logs = gr.Dropdown(label="Load History")
+                        selected_logs = gr.Dropdown(label="Load History", interactive=True)
                         select_log_btn = gr.Button("Load History")
                         save_btn = gr.Button("Save History")
                 
