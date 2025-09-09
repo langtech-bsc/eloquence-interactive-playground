@@ -65,6 +65,7 @@ class LLMHandler:
                 )
                 return cgi
             if "whisper" in  model_name.lower():
+                print("WHIII")
                 cgi = WhisperInteractor(
                     api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )

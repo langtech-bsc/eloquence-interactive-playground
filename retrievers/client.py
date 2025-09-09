@@ -45,6 +45,7 @@ class RetrieverClient:
         return response.status_code == 200
     
     def list_vs(self):
+        print(requests.get(f"{self.endpoint}/list_indices").json())
         try:
             return requests.get(f"{self.endpoint}/list_indices").json()["index_names"]
         except:

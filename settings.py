@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
     RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7999"
     BASIC_CONFIG: dict = {"interface": "text", "RAG": False, "service": "local"}
+    BASIC_AUDIO_CONFIG: dict = {"interface": "audio", "RAG": False, "service": "local"}
     
     EMBEDDING_SIZES: dict = {
         "sentence-transformers/all-MiniLM-L6-v2": 384,

@@ -35,6 +35,7 @@ from gradio_app.app_handlers import (
     _load_feedback_df,
     dynamic_data,
     llm_handler,
+    load_task
 )
 
 # --- Logging ---
@@ -128,6 +129,8 @@ async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadF
     """Primary endpoint for submitting a single query to the LLM."""
     request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
     response_text, documents = await query_llm_general(available_llms=llm_handler.available_llms, audio_file=audio_file, **request_data.model_dump())
+    if len(documents) < 2:
+        documents = []
     return ResponseQueryLLM(text=response_text, documents=documents)
 
 
@@ -188,7 +191,7 @@ async def list_vector_stores(retriever_address: str = "public"):
 @app.get("/list_llms", response_model=ResponseList)
 def list_llms():
     """Lists available and online LLM models."""
-    _, online_models = _get_online_models()
+    _, online_models = _get_online_models(llm_handler.available_llms)
     return ResponseList(available=online_models)
 
 
@@ -253,7 +256,22 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                 
                 # Input UI
                 with gr.Row():
-                    input_textbox = gr.Textbox(scale=4, show_label=False, placeholder="Type your message here...", container=False)
+                    with gr.Column(visible=True) as text_column:
+                        input_textbox = gr.Textbox(
+                            scale=3,
+                            show_label=False,
+                            container=False,
+                        )
+                    with gr.Column(visible=False) as audio_column:
+                        hidden_submit_btn = gr.Button(visible=False, elem_id="trigger_audio_submit")
+                        html = """
+                        <button class="lg secondary  svelte-cmf5ev" onclick="startStreaming()">Start Streaming &#128266;</button>
+                        <button class="lg secondary  svelte-cmf5ev" onclick="stopStreaming();document.getElementById('trigger_audio_submit').click();">Stop Streaming</button>
+                        <p id="recordstatus">Recording stopped.</p>
+                        """
+
+                        audio_object = gr.HTML(html)
+                    # input_textbox = gr.Textbox(scale=4, show_label=False, placeholder="Type your message here...", container=False)
                     submit_btn = gr.Button("Submit")
                     clear_btn = gr.Button("Clear")
 
@@ -347,6 +365,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     
     clear_btn.click(lambda: ([], "", None, gr.update(visible=False)), [], [chatbot, system_prompt, selected_prompt, rag_column])
     retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
+    task_config.change(load_task, [task_config], [text_column, audio_column, submit_btn])
     save_prompt_btn.click(save_prompt, [system_prompt], None)
     save_btn.click(store_history, [chatbot, system_prompt], None)
     

@@ -24,6 +24,7 @@ class BSCInteractor:
             "max_tokens": max_tokens,
             "top_p": top_p
         }
+        logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
         self.stream = stream
         self.client = openai.OpenAI(
             base_url=self.api_endpoint,
@@ -248,30 +249,15 @@ class SalamandraInteractor(BSCInteractor):
 
 
 class WhisperInteractor(BSCInteractor):
-    def _construct_message_list(self, llm, system_prompt, context, history, audio):
-        messages = []
-        for q, a in history:
-            if len(a) == 0:  # the last message
-                q = system_prompt + " Context: " + context + " " + q
-            if len(a) != 0:
-                messages.append({
-                    "role": "user",
-                    "content": q,
-                })
-            elif len(a) == 0:
-                messages.append({
-                    "role": "user",
-                    "content": [
-                       {
-                           "type": "text",
-                           "text": q
-                       },
-                    ]
+    def __call__(self, documents, history, llm, system_prompt, audio):
+        from io import BytesIO
+        audio = BytesIO(audio)
+        audio.name = "in.wav"
+        transcription = self.client.audio.transcriptions.create(
+            file=audio,
+            model=self.model_name,
+            language="en",
+            temperature=0.0
+            )
+        return transcription.text
 
-                })
-            if len(a) != 0:  # some of the previous LLM answers
-                messages.append({
-                    "role": "assistant",
-                    "content": reverse_doc_links(a),
-                })
-        return messages

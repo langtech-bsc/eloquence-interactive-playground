@@ -14,7 +14,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.task_handlers import get_task_handler
 from gradio_app.backend.query_llm import LLMHandler
-from gradio_app.helpers import replace_doc_links, _load_json, _save_json, remove_html_tags, extract_docs_from_rendered_template, _get_user_filepath
+from gradio_app.helpers import replace_doc_links, _load_json, _save_json, remove_html_tags, extract_docs_from_rendered_template, _get_user_filepath, check_llm_interface
 from retrievers.client import RetrieverClient
 from settings import settings, USER_FEEDBACK_FILE, USER_HISTORY_FILE, USER_PROMPTS_FILE, USER_RETRIEVERS_FILE
 
@@ -57,6 +57,15 @@ def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name
     
     shutil.rmtree(settings.GENERIC_UPLOAD, ignore_errors=True)
     gr.Info("Ingestion successful!")
+
+
+def load_task(task_config):
+    task_config = json.loads(task_config)
+    if task_config["interface"] == "audio":
+        return gr.update(visible=False), gr.update(visible=True), gr.update(interactive=False)
+    else:
+        return gr.update(visible=True), gr.update(visible=False), gr.update(interactive=True)
+
 
 def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_name, task_config, retriever_instance, **kwargs):
     """
@@ -270,6 +279,7 @@ def _get_retrievers(user: str):
     user_retriever_path = _get_user_filepath(user, USER_RETRIEVERS_FILE)
     user_retrievers = _load_json(user_retriever_path, default={})
     retrievers.update(user_retrievers)
+    print("RETRIEBERS", str(retrievers))
     return gr.Radio(label="Vector Store", choices=[(k, v) for k, v in retrievers.items()]), retrievers
 
 def _get_prompts(user: str):
@@ -284,12 +294,11 @@ def _get_historical_prompts(user: str):
 
 def _get_online_models(available_llms):
     def _is_model_online(model_name):
-        return True
         gr.Info(f"Checking availability of {model_name}")
-        task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data["retriever_instance"])
-        query = history_user_entry = "hello, say one random words"
-        history = [[history_user_entry, ""]]
-        try: 
+        if check_llm_interface(model_name, "text", available_llms=llm_handler.available_llms):
+            task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data["retriever_instance"])
+            query = history_user_entry = "hello, say one random words"
+            history = [[history_user_entry, ""]]
             for part, documents in task_handler(model_name,
                                                 "",
                                                 history,
@@ -298,8 +307,23 @@ def _get_online_models(available_llms):
                                                 "index_name",
                                                 max_tokens=2):
                 return True
-        except Exception as e:
-            return False
+        else:
+            task_handler = get_task_handler(settings.BASIC_AUDIO_CONFIG, llm_handler, dynamic_data["retriever_instance"])
+            query = history_user_entry = "hello, say one random words"
+            history = [[history_user_entry, ""]]
+            afd = open("hi.wav", "rb")
+            for part, documents in task_handler(model_name,
+                                                "",
+                                                history,
+                                                query,
+                                                0,
+                                                "index_name",
+                                                max_tokens=2,
+                                                audio=afd.read()):
+                return True
+ 
+
+        return False
 
     choices = [(llm, llm) for llm in available_llms.keys()]
     online_choices = [choice for choice in choices if _is_model_online(choice[1])]
