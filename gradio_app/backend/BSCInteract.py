@@ -33,6 +33,7 @@ class BSCInteractor:
     
     def __call__(self, documents, history, llm, system_prompt, audio=None):
         messages = self.build_messages(documents, history, llm, system_prompt, audio)
+        logger.info(str(messages))
         return self.chat_completion(messages)
     
     def build_messages(self, documents, history, llm, system_prompt, audio):

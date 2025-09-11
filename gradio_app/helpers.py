@@ -62,6 +62,7 @@ def replace_doc_links(text):
         return f'<a href="{url}" onmouseover="document.getElementById(\'doc_{doc_id}\').style=\'border: 2px solid white;background:#f27618\'; display: block;" onmouseout="document.getElementById(\'doc_{doc_id}\').style=\'border: 1px solid white; background: none; display:none;\'" >[{doc_id}]</a>'
     
     rep = re.sub(r"\[doc ?(\d+)\]", repl, text)
+    rep = re.sub(r"\[(\d+)\]", repl, rep)
     rep = re.sub(r"\[document ?(\d+)\]", repl, rep)
     rep = re.sub(r"\(doc ?(\d+)\)", repl, rep)
     rep = re.sub(r"\(document ?(\d+)\)", repl, rep)

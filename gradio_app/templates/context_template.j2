@@ -1,9 +1,11 @@
-If you are using fact derived from a snippet, provide a number given as "Document no. x" as a reference.
+You are give a set of documents that provide context for answering questions, indicated with "Context documents: Document no. x".
+If you are using fact derived from a document mentioned there, provide a number given as "Document no. x" as a reference.
 Include the number in brackets after the passage, in format "[doc x]"
-For example:
+<example>
 The capital of Czechia is Prague[doc 2].
+</example>
 Use the citations immediately as the information appears in the text.
-
+Importantly, do not make up any citations - if there is no relevant document, do not cite anything.
 Context documents:
 {% for doc in documents %}
 ---
