@@ -3,6 +3,7 @@ import os
 
 from settings import settings
 
+os.remove(settings.SQL_DB)
 if not os.path.exists(settings.SQL_DB):
     con = sqlite3.connect(settings.SQL_DB)
     cur = con.cursor()
@@ -63,7 +64,11 @@ if not os.path.exists(settings.SQL_DB):
         ("vukst", "test"),
         ("yuchen.zhang", "test"),
         ("yulia", "test"),
-        ("review", "eloquence")
+        ("review", "eloquence"),
+        ("reviewer_1", "3x3£u0^12X0]"),
+        ("reviewer_2", "m0{8SkwP~q2l"),
+        ("reviewer_3", "Y{Z2W[s64F18"),
+        ("eloquence_po", "46#5{4Lm2r57")
     ]:
         os.makedirs(os.path.join(settings.USER_WORKSPACES, user), exist_ok=True)
         cur.execute(f"INSERT INTO users VALUES ('{user}', '{passwd}')")
