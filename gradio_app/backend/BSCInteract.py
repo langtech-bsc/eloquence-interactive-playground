@@ -60,9 +60,7 @@ class BSCInteractor:
         try:
             completion = self._request(messages)
         except:
-            logger.error("Failed generating response!")
-            return ""
-
+            logging.error("Failed to generate a response.")
         if self.stream:
             return self._generator(completion)
 
@@ -97,8 +95,9 @@ class BSCInteractor:
         logger.info(self.api_endpoint + " " + self.model_name)
         logger.info(len(messages))
         logger.info(str([m['role'] for m in messages]))
+        model = self.model_name if "aws.endpoints.huggingface.cloud" not in self.api_endpoint else "tgi"
         completion = self.client.chat.completions.create(
-            model="tgi",
+            model=model,
             messages=messages,
             stream=self.stream,
             **self.generate_kwargs

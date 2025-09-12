@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         "gpt-3.5-turbo": 4096,
         "Qwen2-Audio": 4096,
         "EuroLLM": 4096,
-        "Salamandra (MN5)": 8196,
+        "Salamandra (AMD)": 8196,
         "Salamandra (MN5)": 8196,
         "Salamandra (HF)": 8196,
         "sentence-transformers/all-MiniLM-L6-v2": 128,

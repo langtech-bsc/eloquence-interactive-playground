@@ -205,7 +205,7 @@ def _get_online_models():
         task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data["retriever_instance"])
         query = history_user_entry = "hello, say one random words"
         history = [[history_user_entry, ""]]
-        try: 
+        try:
             for part, documents in task_handler(model_name,
                                                 "",
                                                 history,
@@ -214,7 +214,7 @@ def _get_online_models():
                                                 "index_name",
                                                 max_tokens=2):
                 return True
-        except Exception as e:
+        except:
             return False
         
     choices=[
