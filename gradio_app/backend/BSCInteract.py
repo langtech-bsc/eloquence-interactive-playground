@@ -27,7 +27,8 @@ class BSCInteractor:
         self.stream = stream
         self.client = openai.OpenAI(
             base_url=self.api_endpoint,
-            api_key="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"
+            api_key="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",
+            timeout=10
         )
         logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
     
@@ -90,7 +91,8 @@ class BSCInteractor:
     def set_params(self, **params):
         self.generate_kwargs.update(params)
 
-    @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=4, max=10), stop=tenacity.stop_after_attempt(3))
+    # @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, mina4, max=10), stop=tenacity.stop_after_attempt(3))
+    @tenacity.retry(stop=tenacity.stop_after_attempt(3))
     def _request(self, messages):
         logger.info(self.api_endpoint + " " + self.model_name)
         logger.info(len(messages))

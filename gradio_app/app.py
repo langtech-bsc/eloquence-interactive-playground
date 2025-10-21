@@ -218,7 +218,7 @@ def _get_online_models():
             return False
         
     choices=[
-        ("GPT-3.5", "gpt-3.5-turbo")
+        ("GPT", "gpt-3.5-turbo")
         ] + [(llm_entry.name, llm_entry.name) for llm_entry in settings.AVAILABLE_LLMS.values()]
     online_choices =  [choice for choice in choices
                        if _check_if_online(choice[1])]
@@ -441,6 +441,7 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
     if task_config["interface"] == "audio":
         audio_in = deepcopy(dynamic_data["audio_buffer"])
         dynamic_data["audio_buffer"] = []
+        query = "listen to  the audio"
 
     if not query:
         raise gr.Error("Empty string was submitted")

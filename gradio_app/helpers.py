@@ -38,7 +38,7 @@ def check_llm_interface(llm: str, interface: str) -> bool:
     """Checks if the given LLM supports the specified interface."""
     for supported_llm, supported_interface in SUPPORTED_LLMS.items():
         if supported_llm.lower() in llm.lower():
-            return supported_interface == interface
+            return interface in supported_interface
 
 
 def encode_audio_stream(audio):

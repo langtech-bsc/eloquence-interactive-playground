@@ -62,6 +62,7 @@ class LLMHandler:
                 )
                 return cgi
             if "qwen" in  model_name.lower():
+                logger.info("QWEN" + model_name)
                 model_entry = settings.AVAILABLE_LLMS[model_name]
                 cgi = QwenInteractor(
                     api_endpoint=model_entry.endpoint, model_name=model_entry.model

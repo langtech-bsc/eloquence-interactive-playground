@@ -9,7 +9,7 @@ SUPPORTED_LLMS = {
     "olmo" : "text",
     "euro": "text",
     "salamandra": "text",
-    "qwen": "audio",
+    "qwen": "audio,text",
     "whisper": "audio"
 }
 class LLMEntry:
