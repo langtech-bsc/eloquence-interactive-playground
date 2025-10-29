@@ -1,5 +1,5 @@
 Based on https://huggingface.co/spaces/akazakov/rag-gradio-sample-project/tree/main/gradio_app
- 
+  
 ## About
 ...
 
