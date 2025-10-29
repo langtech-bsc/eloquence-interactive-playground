@@ -34,4 +34,4 @@ async def respond(request: Request):
 # Response: { "id": 1, "name": "New Item", "description": "Description of the new item" }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8088)
+    # uvicorn.run(app, host="127.0.0.1", port=8089)
