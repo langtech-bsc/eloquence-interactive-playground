@@ -256,7 +256,7 @@ class WhisperInteractor(BSCInteractor):
         transcription = self.client.audio.transcriptions.create(
             file=audio,
             model=self.model_name,
-            language="es",
+            language="ca",
             temperature=0.0
             )
         return transcription.text
