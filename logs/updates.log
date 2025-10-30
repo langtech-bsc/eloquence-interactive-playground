@@ -1,11 +1,11 @@
-[2025-10-30T10:43:01Z] Changes detected on main (local); preparing rebuild.
+[2025-10-30T10:46:02Z] Changes detected on main (local); preparing rebuild.
 git pull output:
 fatal: could not read Username for 'https://github.com': No such device or address
 Changed files:
 check_updates_on_main.sh
 dialogue_manager/dummy.py
 logs/updates.log
-[2025-10-30T10:43:01Z] Starting docker build for eloquence-ip:dev
+[2025-10-30T10:46:02Z] Starting docker build for eloquence-ip:dev
 #0 building with "default" instance using docker driver
 
 #1 [internal] load build definition from Dockerfile
@@ -13,7 +13,7 @@ logs/updates.log
 #1 DONE 0.0s
 
 #2 [internal] load metadata for docker.io/library/python:3.10-slim
-#2 DONE 0.4s
+#2 DONE 0.7s
 
 #3 [internal] load .dockerignore
 #3 transferring context: 111B done
@@ -24,60 +24,61 @@ logs/updates.log
 #4 DONE 0.0s
 
 #5 [internal] load build context
-#5 transferring context: 344.14kB 0.2s done
-#5 DONE 0.2s
+#5 transferring context: 335.11kB 0.2s done
+#5 DONE 0.3s
 
-#6 [ 7/10] RUN pip install --no-cache-dir --no-deps -r requirements.txt
+#6 [ 4/10] RUN apt install curl -y
 #6 CACHED
 
-#7 [ 4/10] RUN apt install curl -y
+#7 [ 5/10] RUN apt install iputils-ping ffmpeg -y
 #7 CACHED
 
-#8 [ 5/10] RUN apt install iputils-ping ffmpeg -y
+#8 [ 6/10] COPY requirements.txt ./
 #8 CACHED
 
-#9 [ 6/10] COPY requirements.txt ./
+#9 [ 7/10] RUN pip install --no-cache-dir --no-deps -r requirements.txt
 #9 CACHED
 
-#10 [ 2/10] WORKDIR /usr/src/app
+#10 [ 8/10] RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 #10 CACHED
 
-#11 [ 3/10] RUN apt update
+#11 [ 2/10] WORKDIR /usr/src/app
 #11 CACHED
 
-#12 [ 8/10] RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+#12 [ 3/10] RUN apt update
 #12 CACHED
 
 #13 [ 9/10] RUN pip install openai==1.102.0
 #13 CACHED
 
 #14 [10/10] COPY . .
-#14 DONE 10.7s
+#14 DONE 6.2s
 
 #15 exporting to image
 #15 exporting layers
-#15 exporting layers 1.9s done
-#15 writing image sha256:f7d4cc18787439fb83eb4360c74d251ab8c3da77ec7c7bf4f6cdd52561cb6ab4 done
+#15 exporting layers 1.7s done
+#15 writing image sha256:938209d5633fd9d2c20443122bf4eeace5672678b2727fe010b87b0184dd50ae
+#15 writing image sha256:938209d5633fd9d2c20443122bf4eeace5672678b2727fe010b87b0184dd50ae done
 #15 naming to docker.io/library/eloquence-ip:dev done
-#15 DONE 1.9s
-Build duration: 15 seconds
-Built image id: f7d4cc187874
-[2025-10-30T10:43:16Z] Starting container eloquence-ip-dev from image eloquence-ip:dev
-Started container: 271a97ad3608869674257345e5e91ae83e9f1104a12afee46ce09921ada0f6e5
+#15 DONE 1.8s
+Build duration: 10 seconds
+Built image id: 938209d5633f
+[2025-10-30T10:46:12Z] Starting container eloquence-ip-dev from image eloquence-ip:dev
+Started container: a11fe277f3629fd4bcd3c3bb1817466e08f9609cf591314d3d8700502257e17b
 Waiting up to 120s for application to initialize...
 === Container logs (last 200 lines) ===
-2025-10-30T10:43:34.526407618Z INFO:     Started server process [11]
-2025-10-30T10:43:34.526950563Z INFO:     Waiting for application startup.
-2025-10-30T10:43:34.526970110Z INFO:     Application startup complete.
-2025-10-30T10:43:34.527230555Z ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 7999): address already in use
-2025-10-30T10:43:34.527347914Z INFO:     Waiting for application shutdown.
-2025-10-30T10:43:34.527439718Z INFO:     Application shutdown complete.
-2025-10-30T10:43:41.911655561Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
-2025-10-30T10:43:42.277545498Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
-2025-10-30T10:43:42.856776736Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
-2025-10-30T10:43:42.858089309Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
-2025-10-30T10:43:42.858110428Z --------
-2025-10-30T10:43:42.858116649Z   warnings.warn(
-2025-10-30T10:43:43.051967937Z INFO:matplotlib.font_manager:generated new fontManager
-2025-10-30T10:43:44.286684853Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
-2025-10-30T10:43:44.289636241Z ERROR:    [Errno 98] Address already in use
+2025-10-30T10:46:30.360147104Z INFO:     Started server process [11]
+2025-10-30T10:46:30.360344132Z INFO:     Waiting for application startup.
+2025-10-30T10:46:30.360818690Z INFO:     Application startup complete.
+2025-10-30T10:46:30.361325049Z ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 7999): address already in use
+2025-10-30T10:46:30.361497956Z INFO:     Waiting for application shutdown.
+2025-10-30T10:46:30.361819630Z INFO:     Application shutdown complete.
+2025-10-30T10:46:38.513146768Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
+2025-10-30T10:46:38.833409965Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-10-30T10:46:39.420511831Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-10-30T10:46:39.434799496Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
+2025-10-30T10:46:39.434815348Z --------
+2025-10-30T10:46:39.434821756Z   warnings.warn(
+2025-10-30T10:46:39.575063397Z INFO:matplotlib.font_manager:generated new fontManager
+2025-10-30T10:46:40.406712708Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
+2025-10-30T10:46:40.406916556Z ERROR:    [Errno 98] Address already in use
