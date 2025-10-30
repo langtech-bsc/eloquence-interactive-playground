@@ -4,6 +4,17 @@ set -euo pipefail
 # Script working directory
 cd /home/mt/eloquence-interactive-playground
 
+# Prevent concurrent runs (use an exclusive flock on a temp lockfile)
+LOCKFILE="/tmp/eloquence_update.lock"
+exec 200>"$LOCKFILE"
+# Try to acquire the lock; if another instance holds it, exit silently
+if ! flock -n 200; then
+    # optional: write a short note to stderr (not to repo log) so cron mail shows it
+    echo "$(date -u +'%Y-%m-%dT%H:%M:%SZ') Another instance is already running; exiting." >&2
+    exit 0
+fi
+
+
 # Log file (kept in the repo so everyone can view it)
 LOG_DIR="logs"
 LOG_FILE="$LOG_DIR/updates.log"
