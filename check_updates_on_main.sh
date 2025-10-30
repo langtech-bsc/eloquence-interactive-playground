@@ -77,12 +77,75 @@ if [ "$rebuild_needed" -eq 1 ]; then
         echo "$CHANGED_FILES" >> "$LOG_FILE"
     fi
 
-    # Perform rebuild regardless, but only log when there were upstream commits
+    # Perform rebuild regardless. When logging is enabled (remote or local commits),
+    # capture build & run output into the repo log so the last execution is recorded.
     docker stop eloquence-ip-dev || true
     docker rm eloquence-ip-dev || true
     docker rmi -f eloquence-ip:dev || true
-    docker build -t eloquence-ip:dev .
-    docker run --name eloquence-ip-dev -d --net="host" -e GRADIO_SERVER_PORT=8081 -v `pwd`/playground-data:/data eloquence-ip:dev
+
+    BUILD_SUCCESS=0
+    if [ "$remote_changed" -eq 1 ] || [ "$local_ahead" -eq 1 ]; then
+        TS=$(timestamp)
+        echo "[$TS] Starting docker build for eloquence-ip:dev" >> "$LOG_FILE"
+        build_start=$(date +%s)
+        # Capture build output into the repo log
+        if docker build -t eloquence-ip:dev . 2>&1 | tee -a "$LOG_FILE"; then
+            BUILD_SUCCESS=1
+        else
+            BUILD_SUCCESS=0
+            echo "[$(timestamp)] Docker build failed." >> "$LOG_FILE"
+        fi
+        build_end=$(date +%s)
+        echo "Build duration: $((build_end - build_start)) seconds" >> "$LOG_FILE"
+
+        if [ "$BUILD_SUCCESS" -eq 1 ]; then
+            IMAGE_ID=$(docker images -q eloquence-ip:dev || true)
+            echo "Built image id: ${IMAGE_ID}" >> "$LOG_FILE"
+        fi
+    else
+        # No logging requested; run build normally (silent to repo log)
+        if docker build -t eloquence-ip:dev .; then
+            BUILD_SUCCESS=1
+        else
+            BUILD_SUCCESS=0
+        fi
+    fi
+
+    # Start the container only if the build succeeded (or image exists)
+    if [ "$BUILD_SUCCESS" -eq 1 ] || docker image inspect eloquence-ip:dev >/dev/null 2>&1; then
+        if [ "$remote_changed" -eq 1 ] || [ "$local_ahead" -eq 1 ]; then
+            TS=$(timestamp)
+            echo "[$TS] Starting container eloquence-ip-dev from image eloquence-ip:dev" >> "$LOG_FILE"
+            CONTAINER_ID=$(docker run --name eloquence-ip-dev -d --net="host" -e GRADIO_SERVER_PORT=8081 -v `pwd`/playground-data:/data eloquence-ip:dev 2>&1)
+            echo "Started container: ${CONTAINER_ID}" >> "$LOG_FILE" || true
+
+            # Wait up to 120s for the app to start (give Gradio time to initialize)
+            echo "Waiting up to 120s for application to initialize..." >> "$LOG_FILE"
+            wait_time=0
+            interval=5
+            max_wait=120
+            while [ $wait_time -lt $max_wait ]; do
+                sleep $interval
+                wait_time=$((wait_time + interval))
+                # Optionally, check logs for a known ready marker (Application startup complete)
+                if docker logs eloquence-ip-dev --timestamps --tail 50 2>/dev/null | grep -q "Application startup complete"; then
+                    echo "Application reported startup complete after ${wait_time}s" >> "$LOG_FILE"
+                    break
+                fi
+            done
+
+            # Capture the recent container logs into the repo log (last 200 lines)
+            echo "=== Container logs (last 200 lines) ===" >> "$LOG_FILE"
+            docker logs eloquence-ip-dev --timestamps --tail 200 >> "$LOG_FILE" 2>&1 || true
+        else
+            # Non-logged path: start container without appending to repo log
+            docker run --name eloquence-ip-dev -d --net="host" -e GRADIO_SERVER_PORT=8081 -v `pwd`/playground-data:/data eloquence-ip:dev
+        fi
+    else
+        if [ "$remote_changed" -eq 1 ] || [ "$local_ahead" -eq 1 ]; then
+            echo "[$(timestamp)] Build failed and image not available; container not started." >> "$LOG_FILE"
+        fi
+    fi
 
     # If we logged earlier (i.e. a remote or local commit triggered the rebuild), commit & push the log
     if [ "$remote_changed" -eq 1 ] || [ "$local_ahead" -eq 1 ]; then
