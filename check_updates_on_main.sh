@@ -130,11 +130,11 @@ if [ "$rebuild_needed" -eq 1 ]; then
             CONTAINER_ID=$(docker run --name eloquence-ip-dev -d --net="host" -e GRADIO_SERVER_PORT=8081 -v `pwd`/playground-data:/data eloquence-ip:dev 2>&1)
             echo "Started container: ${CONTAINER_ID}" >> "$LOG_FILE" || true
 
-            # Wait up to 120s for the app to start (give Gradio time to initialize)
-            echo "Waiting up to 120s for application to initialize..." >> "$LOG_FILE"
+            # Wait up to 60s for the app to start (give Gradio time to initialize)
+            echo "Waiting up to 60s for application to initialize..." >> "$LOG_FILE"
             wait_time=0
             interval=5
-            max_wait=120
+            max_wait=60
             while [ $wait_time -lt $max_wait ]; do
                 sleep $interval
                 wait_time=$((wait_time + interval))
@@ -163,9 +163,12 @@ if [ "$rebuild_needed" -eq 1 ]; then
         git add "$LOG_FILE" || true
         if ! git diff --quiet --cached -- "$LOG_FILE"; then
             TS=$(timestamp)
+            # Create a single automated commit containing the current log contents.
+            # Do not append a push-confirmation line afterwards — that caused
+            # a second automated commit in earlier iterations. We still attempt
+            # to push, but even if the push fails we won't create extra commits.
             git commit -m "Automated update log: $TS" || true
             git push origin main || true
-            echo "[$TS] Pushed log commit." >> "$LOG_FILE"
         fi
     fi
 else
