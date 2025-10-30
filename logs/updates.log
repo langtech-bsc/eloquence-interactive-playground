@@ -1,64 +1,83 @@
-[2025-10-30T09:48:11Z] Changes detected on main (local); preparing rebuild.
+[2025-10-30T10:43:01Z] Changes detected on main (local); preparing rebuild.
 git pull output:
-From https://github.com/langtech-bsc/eloquence-interactive-playground
- * branch            main       -> FETCH_HEAD
-Already up to date.
+fatal: could not read Username for 'https://github.com': No such device or address
 Changed files:
 check_updates_on_main.sh
+dialogue_manager/dummy.py
+logs/updates.log
+[2025-10-30T10:43:01Z] Starting docker build for eloquence-ip:dev
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 559B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.10-slim
+#2 DONE 0.4s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 111B done
+#3 DONE 0.0s
+
+#4 [ 1/10] FROM docker.io/library/python:3.10-slim@sha256:e0c4fae70d550834a40f6c3e0326e02cfe239c2351d922e1fb1577a3c6ebde02
+#4 resolve docker.io/library/python:3.10-slim@sha256:e0c4fae70d550834a40f6c3e0326e02cfe239c2351d922e1fb1577a3c6ebde02 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 344.14kB 0.2s done
+#5 DONE 0.2s
+
+#6 [ 7/10] RUN pip install --no-cache-dir --no-deps -r requirements.txt
+#6 CACHED
+
+#7 [ 4/10] RUN apt install curl -y
+#7 CACHED
+
+#8 [ 5/10] RUN apt install iputils-ping ffmpeg -y
+#8 CACHED
+
+#9 [ 6/10] COPY requirements.txt ./
+#9 CACHED
+
+#10 [ 2/10] WORKDIR /usr/src/app
+#10 CACHED
+
+#11 [ 3/10] RUN apt update
+#11 CACHED
+
+#12 [ 8/10] RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+#12 CACHED
+
+#13 [ 9/10] RUN pip install openai==1.102.0
+#13 CACHED
+
+#14 [10/10] COPY . .
+#14 DONE 10.7s
+
+#15 exporting to image
+#15 exporting layers
+#15 exporting layers 1.9s done
+#15 writing image sha256:f7d4cc18787439fb83eb4360c74d251ab8c3da77ec7c7bf4f6cdd52561cb6ab4 done
+#15 naming to docker.io/library/eloquence-ip:dev done
+#15 DONE 1.9s
+Build duration: 15 seconds
+Built image id: f7d4cc187874
+[2025-10-30T10:43:16Z] Starting container eloquence-ip-dev from image eloquence-ip:dev
+Started container: 271a97ad3608869674257345e5e91ae83e9f1104a12afee46ce09921ada0f6e5
+Waiting up to 120s for application to initialize...
 === Container logs (last 200 lines) ===
-2025-10-30T10:40:18.721410018Z Traceback (most recent call last):
-2025-10-30T10:40:18.721474692Z   File "/usr/local/lib/python3.10/runpy.py", line 187, in _run_module_as_main
-2025-10-30T10:40:18.721481335Z     mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
-2025-10-30T10:40:18.721486890Z   File "/usr/local/lib/python3.10/runpy.py", line 157, in _get_module_details
-2025-10-30T10:40:18.721492709Z     code = loader.get_code(mod_name)
-2025-10-30T10:40:18.721498067Z   File "<frozen importlib._bootstrap_external>", line 1017, in get_code
-2025-10-30T10:40:18.721504087Z   File "<frozen importlib._bootstrap_external>", line 947, in source_to_code
-2025-10-30T10:40:18.721509749Z   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-2025-10-30T10:40:18.721598661Z   File "/usr/src/app/dialogue_manager/dummy.py", line 37
-2025-10-30T10:40:18.721622063Z     # uvicorn.run(app, host="127.0.0.1", port=8089)
-2025-10-30T10:40:18.721628660Z                                                    ^
-2025-10-30T10:40:18.721634608Z IndentationError: expected an indented block after 'if' statement on line 36
-2025-10-30T10:40:36.083592837Z INFO:     Started server process [10]
-2025-10-30T10:40:36.083714665Z INFO:     Waiting for application startup.
-2025-10-30T10:40:36.084101972Z INFO:     Application startup complete.
-2025-10-30T10:40:36.084501044Z ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 7999): address already in use
-2025-10-30T10:40:36.084613358Z INFO:     Waiting for application shutdown.
-2025-10-30T10:40:36.084823228Z INFO:     Application shutdown complete.
-2025-10-30T10:40:44.278893548Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
-2025-10-30T10:40:44.626627568Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
-2025-10-30T10:40:45.170816539Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
-2025-10-30T10:40:45.179018098Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
-2025-10-30T10:40:45.179035937Z --------
-2025-10-30T10:40:45.179042291Z   warnings.warn(
-2025-10-30T10:40:45.402610339Z INFO:matplotlib.font_manager:generated new fontManager
-2025-10-30T10:40:46.513020767Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
-2025-10-30T10:40:46.513111952Z ERROR:    [Errno 98] Address already in use
-[2025-10-30T10:41:20Z] Pushed log commit.
-=== Container logs (last 200 lines) ===
-2025-10-30T10:40:18.721410018Z Traceback (most recent call last):
-2025-10-30T10:40:18.721474692Z   File "/usr/local/lib/python3.10/runpy.py", line 187, in _run_module_as_main
-2025-10-30T10:40:18.721481335Z     mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
-2025-10-30T10:40:18.721486890Z   File "/usr/local/lib/python3.10/runpy.py", line 157, in _get_module_details
-2025-10-30T10:40:18.721492709Z     code = loader.get_code(mod_name)
-2025-10-30T10:40:18.721498067Z   File "<frozen importlib._bootstrap_external>", line 1017, in get_code
-2025-10-30T10:40:18.721504087Z   File "<frozen importlib._bootstrap_external>", line 947, in source_to_code
-2025-10-30T10:40:18.721509749Z   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-2025-10-30T10:40:18.721598661Z   File "/usr/src/app/dialogue_manager/dummy.py", line 37
-2025-10-30T10:40:18.721622063Z     # uvicorn.run(app, host="127.0.0.1", port=8089)
-2025-10-30T10:40:18.721628660Z                                                    ^
-2025-10-30T10:40:18.721634608Z IndentationError: expected an indented block after 'if' statement on line 36
-2025-10-30T10:40:36.083592837Z INFO:     Started server process [10]
-2025-10-30T10:40:36.083714665Z INFO:     Waiting for application startup.
-2025-10-30T10:40:36.084101972Z INFO:     Application startup complete.
-2025-10-30T10:40:36.084501044Z ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 7999): address already in use
-2025-10-30T10:40:36.084613358Z INFO:     Waiting for application shutdown.
-2025-10-30T10:40:36.084823228Z INFO:     Application shutdown complete.
-2025-10-30T10:40:44.278893548Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
-2025-10-30T10:40:44.626627568Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
-2025-10-30T10:40:45.170816539Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
-2025-10-30T10:40:45.179018098Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
-2025-10-30T10:40:45.179035937Z --------
-2025-10-30T10:40:45.179042291Z   warnings.warn(
-2025-10-30T10:40:45.402610339Z INFO:matplotlib.font_manager:generated new fontManager
-2025-10-30T10:40:46.513020767Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
-2025-10-30T10:40:46.513111952Z ERROR:    [Errno 98] Address already in use
+2025-10-30T10:43:34.526407618Z INFO:     Started server process [11]
+2025-10-30T10:43:34.526950563Z INFO:     Waiting for application startup.
+2025-10-30T10:43:34.526970110Z INFO:     Application startup complete.
+2025-10-30T10:43:34.527230555Z ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 7999): address already in use
+2025-10-30T10:43:34.527347914Z INFO:     Waiting for application shutdown.
+2025-10-30T10:43:34.527439718Z INFO:     Application shutdown complete.
+2025-10-30T10:43:41.911655561Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
+2025-10-30T10:43:42.277545498Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-10-30T10:43:42.856776736Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-10-30T10:43:42.858089309Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
+2025-10-30T10:43:42.858110428Z --------
+2025-10-30T10:43:42.858116649Z   warnings.warn(
+2025-10-30T10:43:43.051967937Z INFO:matplotlib.font_manager:generated new fontManager
+2025-10-30T10:43:44.286684853Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
+2025-10-30T10:43:44.289636241Z ERROR:    [Errno 98] Address already in use
