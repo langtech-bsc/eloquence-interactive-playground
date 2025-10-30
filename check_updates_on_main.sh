@@ -29,6 +29,16 @@ OLD_HEAD=$(git rev-parse --verify HEAD)
 PULL_OUTPUT=$(git pull origin main 2>&1 || true)
 NEW_HEAD=$(git rev-parse --verify HEAD)
 
+# If the last commit (local HEAD or the fetched origin/main) is an automated
+# CI/CD commit (prefixed with [CI/CD]) then stop the script to avoid acting on
+# machine-generated commits.
+LAST_SUBJ_HEAD=$(git log -1 --pretty=%s HEAD 2>/dev/null || true)
+LAST_SUBJ_ORIGIN=$(git log -1 origin/main --pretty=%s 2>/dev/null || true)
+if (echo "$LAST_SUBJ_HEAD" | grep -qE '^\[CI/CD\]' || echo "$LAST_SUBJ_ORIGIN" | grep -qE '^\[CI/CD\]'); then
+    echo "$(timestamp) Detected last commit prefixed with [CI/CD]; exiting to avoid automated loop." >&2
+    exit 0
+fi
+
 remote_changed=0
 local_ahead=0
 CHANGED_FILES=""
@@ -86,6 +96,17 @@ if [ "$rebuild_needed" -eq 1 ]; then
         echo "$PULL_OUTPUT" >> "$LOG_FILE"
         echo "Changed files:" >> "$LOG_FILE"
         echo "$CHANGED_FILES" >> "$LOG_FILE"
+
+        # Record an identifier for the human-originating change so we only
+        # create a single automated commit per human change. For remote
+        # pulls the new upstream HEAD is the identifier; for local-ahead
+        # cases use the current HEAD.
+        if [ "$remote_changed" -eq 1 ]; then
+            HUMAN_REF="$NEW_HEAD"
+        else
+            HUMAN_REF=$(git rev-parse --verify HEAD 2>/dev/null || true)
+        fi
+        echo "[${TS}] Human change identifier: ${HUMAN_REF}" >> "$LOG_FILE"
     fi
 
     # Perform rebuild regardless. When logging is enabled (remote or local commits),
@@ -160,15 +181,24 @@ if [ "$rebuild_needed" -eq 1 ]; then
 
     # If we logged earlier (i.e. a remote or local commit triggered the rebuild), commit & push the log
     if [ "$remote_changed" -eq 1 ] || [ "$local_ahead" -eq 1 ]; then
-        git add "$LOG_FILE" || true
+        git add -- "$LOG_FILE" || true
         if ! git diff --quiet --cached -- "$LOG_FILE"; then
             TS=$(timestamp)
-            # Create a single automated commit containing the current log contents.
-            # Do not append a push-confirmation line afterwards — that caused
-            # a second automated commit in earlier iterations. We still attempt
-            # to push, but even if the push fails we won't create extra commits.
-            git commit -m "Automated update log: $TS" || true
-            git push origin main || true
+            # Prevent creating multiple automated commits for the same
+            # human-originating change: include HUMAN_REF in the automated
+            # commit message and skip committing if the latest commit
+            # already references that HUMAN_REF.
+            # Refresh remote ref so concurrent runners see latest remote commits
+            git fetch origin --quiet || true
+            LAST_MSG_LOCAL=$(git log -1 --pretty=%B 2>/dev/null || true)
+            LAST_MSG_REMOTE=$(git log -1 origin/main --pretty=%B 2>/dev/null || true)
+            if [ -n "${HUMAN_REF:-}" ] && (echo "$LAST_MSG_LOCAL" | grep -q "$HUMAN_REF" || echo "$LAST_MSG_REMOTE" | grep -q "$HUMAN_REF"); then
+                echo "[$(timestamp)] Automated commit already exists for ${HUMAN_REF}; skipping commit." >> "$LOG_FILE"
+            else
+                # Commit only the log file to avoid including other staged files.
+                git commit -m "[CI/CD] Automated update log for ${HUMAN_REF:-unknown}: $TS" -- "$LOG_FILE" || true
+                git push origin main || true
+            fi
         fi
     fi
 else
