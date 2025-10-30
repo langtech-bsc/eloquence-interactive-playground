@@ -196,7 +196,7 @@ if [ "$rebuild_needed" -eq 1 ]; then
                 echo "[$(timestamp)] Automated commit already exists for ${HUMAN_REF}; skipping commit." >> "$LOG_FILE"
             else
                 # Commit only the log file to avoid including other staged files.
-                git commit -m "[CI/CD] Automated update log for ${HUMAN_REF:-unknown}: $TS" -- "$LOG_FILE" || true
+                git commit -m "[CI/CD] $TS - $HUMAN_REF" -- "$LOG_FILE" || true
                 git push origin main || true
             fi
         fi
