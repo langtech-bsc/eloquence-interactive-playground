@@ -1,2 +1,2 @@
-docker build -t eloquence-interactive-playground .
-docker run -d  --net="host" -v `pwd`/playground-data:/data eloquence-interactive-playground
+docker build -t eloquence-ip:prod .
+docker run -d --name eloquence-ip-prod --net="host" -v `pwd`/playground-data:/data eloquence-ip:prod
