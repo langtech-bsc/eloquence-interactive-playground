@@ -33,3 +33,32 @@ check_updates_on_main.sh
 2025-10-30T10:40:45.402610339Z INFO:matplotlib.font_manager:generated new fontManager
 2025-10-30T10:40:46.513020767Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
 2025-10-30T10:40:46.513111952Z ERROR:    [Errno 98] Address already in use
+[2025-10-30T10:41:20Z] Pushed log commit.
+=== Container logs (last 200 lines) ===
+2025-10-30T10:40:18.721410018Z Traceback (most recent call last):
+2025-10-30T10:40:18.721474692Z   File "/usr/local/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+2025-10-30T10:40:18.721481335Z     mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
+2025-10-30T10:40:18.721486890Z   File "/usr/local/lib/python3.10/runpy.py", line 157, in _get_module_details
+2025-10-30T10:40:18.721492709Z     code = loader.get_code(mod_name)
+2025-10-30T10:40:18.721498067Z   File "<frozen importlib._bootstrap_external>", line 1017, in get_code
+2025-10-30T10:40:18.721504087Z   File "<frozen importlib._bootstrap_external>", line 947, in source_to_code
+2025-10-30T10:40:18.721509749Z   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2025-10-30T10:40:18.721598661Z   File "/usr/src/app/dialogue_manager/dummy.py", line 37
+2025-10-30T10:40:18.721622063Z     # uvicorn.run(app, host="127.0.0.1", port=8089)
+2025-10-30T10:40:18.721628660Z                                                    ^
+2025-10-30T10:40:18.721634608Z IndentationError: expected an indented block after 'if' statement on line 36
+2025-10-30T10:40:36.083592837Z INFO:     Started server process [10]
+2025-10-30T10:40:36.083714665Z INFO:     Waiting for application startup.
+2025-10-30T10:40:36.084101972Z INFO:     Application startup complete.
+2025-10-30T10:40:36.084501044Z ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 7999): address already in use
+2025-10-30T10:40:36.084613358Z INFO:     Waiting for application shutdown.
+2025-10-30T10:40:36.084823228Z INFO:     Application shutdown complete.
+2025-10-30T10:40:44.278893548Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
+2025-10-30T10:40:44.626627568Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-10-30T10:40:45.170816539Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-10-30T10:40:45.179018098Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
+2025-10-30T10:40:45.179035937Z --------
+2025-10-30T10:40:45.179042291Z   warnings.warn(
+2025-10-30T10:40:45.402610339Z INFO:matplotlib.font_manager:generated new fontManager
+2025-10-30T10:40:46.513020767Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
+2025-10-30T10:40:46.513111952Z ERROR:    [Errno 98] Address already in use
