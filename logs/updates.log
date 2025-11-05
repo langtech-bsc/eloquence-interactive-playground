@@ -80,3 +80,33 @@ Waiting up to 60s for application to initialize...
 2025-10-30T11:25:45.690593549Z INFO:matplotlib.font_manager:generated new fontManager
 2025-10-30T11:25:46.521261939Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
 2025-10-30T11:25:46.521523896Z ERROR:    [Errno 98] Address already in use
+Build duration: 376 seconds
+Built image id: 57877542bdfe
+[2025-11-05T09:24:29Z] Starting container eloquence-ip-dev from image eloquence-ip:dev
+Started container: 690e82e9539476aadd8331f5bfcfff7bd258d27885a5620c5eb67acb29b3ba96
+Waiting up to 60s for application to initialize...
+=== Container logs (last 200 lines) ===
+2025-11-05T09:24:45.801653969Z INFO:     Started server process [10]
+2025-11-05T09:24:45.801985037Z INFO:     Waiting for application startup.
+2025-11-05T09:24:45.802452209Z INFO:     Application startup complete.
+2025-11-05T09:24:45.803059651Z INFO:     Uvicorn running on http://127.0.0.1:7999 (Press CTRL+C to quit)
+2025-11-05T09:24:54.280793656Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
+2025-11-05T09:24:55.100964434Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-11-05T09:24:55.113139912Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
+2025-11-05T09:24:55.113164491Z --------
+2025-11-05T09:24:55.113171003Z   warnings.warn(
+2025-11-05T09:24:55.309289945Z INFO:matplotlib.font_manager:generated new fontManager
+2025-11-05T09:24:56.100344372Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
+2025-11-05T09:24:56.100471344Z INFO:     Uvicorn running on http://0.0.0.0:8081 (Press CTRL+C to quit)
+2025-11-05T09:24:56.100638121Z INFO:     Started reloader process [16] using StatReload
+2025-11-05T09:24:56.241293451Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-11-05T09:25:09.188835675Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
+2025-11-05T09:25:09.490402449Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-11-05T09:25:10.012675390Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-11-05T09:25:10.014246247Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
+2025-11-05T09:25:10.014262179Z --------
+2025-11-05T09:25:10.014268589Z   warnings.warn(
+2025-11-05T09:25:11.180476449Z INFO:     Started server process [35]
+2025-11-05T09:25:11.180527824Z INFO:     Waiting for application startup.
+2025-11-05T09:25:11.181023352Z INFO:     Application startup complete.
+2025-11-05T09:25:11.591698864Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
