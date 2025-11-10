@@ -1,10 +1,11 @@
-[2025-10-30T11:25:01Z] Changes detected on main (local); preparing rebuild.
+[2025-11-10T10:18:01Z] Changes detected on main (local); preparing rebuild.
 git pull output:
 fatal: could not read Username for 'https://github.com': No such device or address
 Changed files:
-check_updates_on_main.sh
-[2025-10-30T11:25:01Z] Human change identifier: 08167e43c1f9dc0aa4a372b2e59fe3a1e3d660f7
-[2025-10-30T11:25:01Z] Starting docker build for eloquence-ip:dev
+gradio_app/app.py
+logs/updates.log
+[2025-11-10T10:18:01Z] Human change identifier: ae9e74384a83ca1ca7af38a8ba0bbbfa038fef1b
+[2025-11-10T10:18:11Z] Starting docker build for eloquence-ip:dev
 #0 building with "default" instance using docker driver
 
 #1 [internal] load build definition from Dockerfile
@@ -12,101 +13,80 @@ check_updates_on_main.sh
 #1 DONE 0.0s
 
 #2 [internal] load metadata for docker.io/library/python:3.10-slim
-#2 DONE 0.4s
+#2 DONE 0.7s
 
 #3 [internal] load .dockerignore
 #3 transferring context: 111B done
 #3 DONE 0.0s
 
-#4 [ 1/10] FROM docker.io/library/python:3.10-slim@sha256:e0c4fae70d550834a40f6c3e0326e02cfe239c2351d922e1fb1577a3c6ebde02
-#4 resolve docker.io/library/python:3.10-slim@sha256:e0c4fae70d550834a40f6c3e0326e02cfe239c2351d922e1fb1577a3c6ebde02 0.0s done
+#4 [ 1/10] FROM docker.io/library/python:3.10-slim@sha256:975a1e200a16719060d391eea4ac66ee067d709cc22a32f4ca4737731eae36c0
+#4 resolve docker.io/library/python:3.10-slim@sha256:975a1e200a16719060d391eea4ac66ee067d709cc22a32f4ca4737731eae36c0 0.0s done
 #4 DONE 0.0s
 
 #5 [internal] load build context
-#5 transferring context: 345.05kB 0.2s done
-#5 DONE 0.2s
+#5 transferring context: 496.24kB 0.3s done
+#5 DONE 0.3s
 
-#6 [ 6/10] COPY requirements.txt ./
+#6 [ 4/10] RUN apt install curl -y
 #6 CACHED
 
 #7 [ 7/10] RUN pip install --no-cache-dir --no-deps -r requirements.txt
 #7 CACHED
 
-#8 [ 4/10] RUN apt install curl -y
+#8 [ 2/10] WORKDIR /usr/src/app
 #8 CACHED
 
-#9 [ 5/10] RUN apt install iputils-ping ffmpeg -y
+#9 [ 8/10] RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 #9 CACHED
 
-#10 [ 2/10] WORKDIR /usr/src/app
+#10 [ 5/10] RUN apt install iputils-ping ffmpeg -y
 #10 CACHED
 
-#11 [ 3/10] RUN apt update
+#11 [ 6/10] COPY requirements.txt ./
 #11 CACHED
 
-#12 [ 8/10] RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+#12 [ 3/10] RUN apt update
 #12 CACHED
 
 #13 [ 9/10] RUN pip install openai==1.102.0
 #13 CACHED
 
 #14 [10/10] COPY . .
-#14 DONE 12.2s
+#14 DONE 4.4s
 
 #15 exporting to image
 #15 exporting layers
-#15 exporting layers 1.8s done
-#15 writing image sha256:bb09c8413045a9b8fe94fa46144f3bf98fb3e4fc021b4fc5acf9c2264b495cea done
+#15 exporting layers 3.1s done
+#15 writing image sha256:f44ccb1d5050ce1c705b521db25c6aac5ac69f1d762a9cf82369404366926e23 done
 #15 naming to docker.io/library/eloquence-ip:dev done
-#15 DONE 1.8s
-Build duration: 16 seconds
-Built image id: bb09c8413045
-[2025-10-30T11:25:17Z] Starting container eloquence-ip-dev from image eloquence-ip:dev
-Started container: 566cd5c5f1752513418d015bc7ea387bb4cc1366cdb21da9b93906ace93a8590
+#15 DONE 3.1s
+Build duration: 9 seconds
+Built image id: f44ccb1d5050
+[2025-11-10T10:18:20Z] Starting container eloquence-ip-dev from image eloquence-ip:dev
+Started container: d649d2d18d06b15f0c36cdde62deb087008c317e2cc56b3fa2b63220eca9cffd
 Waiting up to 60s for application to initialize...
 === Container logs (last 200 lines) ===
-2025-10-30T11:25:35.671071871Z INFO:     Started server process [10]
-2025-10-30T11:25:35.671155818Z INFO:     Waiting for application startup.
-2025-10-30T11:25:35.671518270Z INFO:     Application startup complete.
-2025-10-30T11:25:35.671911372Z ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 7999): address already in use
-2025-10-30T11:25:35.672026358Z INFO:     Waiting for application shutdown.
-2025-10-30T11:25:35.672233646Z INFO:     Application shutdown complete.
-2025-10-30T11:25:44.582923799Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
-2025-10-30T11:25:44.872812980Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
-2025-10-30T11:25:45.470888775Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
-2025-10-30T11:25:45.479234987Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
-2025-10-30T11:25:45.479275817Z --------
-2025-10-30T11:25:45.479281788Z   warnings.warn(
-2025-10-30T11:25:45.690593549Z INFO:matplotlib.font_manager:generated new fontManager
-2025-10-30T11:25:46.521261939Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
-2025-10-30T11:25:46.521523896Z ERROR:    [Errno 98] Address already in use
-Build duration: 376 seconds
-Built image id: 57877542bdfe
-[2025-11-05T09:24:29Z] Starting container eloquence-ip-dev from image eloquence-ip:dev
-Started container: 690e82e9539476aadd8331f5bfcfff7bd258d27885a5620c5eb67acb29b3ba96
-Waiting up to 60s for application to initialize...
-=== Container logs (last 200 lines) ===
-2025-11-05T09:24:45.801653969Z INFO:     Started server process [10]
-2025-11-05T09:24:45.801985037Z INFO:     Waiting for application startup.
-2025-11-05T09:24:45.802452209Z INFO:     Application startup complete.
-2025-11-05T09:24:45.803059651Z INFO:     Uvicorn running on http://127.0.0.1:7999 (Press CTRL+C to quit)
-2025-11-05T09:24:54.280793656Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
-2025-11-05T09:24:55.100964434Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
-2025-11-05T09:24:55.113139912Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
-2025-11-05T09:24:55.113164491Z --------
-2025-11-05T09:24:55.113171003Z   warnings.warn(
-2025-11-05T09:24:55.309289945Z INFO:matplotlib.font_manager:generated new fontManager
-2025-11-05T09:24:56.100344372Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
-2025-11-05T09:24:56.100471344Z INFO:     Uvicorn running on http://0.0.0.0:8081 (Press CTRL+C to quit)
-2025-11-05T09:24:56.100638121Z INFO:     Started reloader process [16] using StatReload
-2025-11-05T09:24:56.241293451Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
-2025-11-05T09:25:09.188835675Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
-2025-11-05T09:25:09.490402449Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
-2025-11-05T09:25:10.012675390Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
-2025-11-05T09:25:10.014246247Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
-2025-11-05T09:25:10.014262179Z --------
-2025-11-05T09:25:10.014268589Z   warnings.warn(
-2025-11-05T09:25:11.180476449Z INFO:     Started server process [35]
-2025-11-05T09:25:11.180527824Z INFO:     Waiting for application startup.
-2025-11-05T09:25:11.181023352Z INFO:     Application startup complete.
-2025-11-05T09:25:11.591698864Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-11-10T10:18:36.095934302Z INFO:     Started server process [10]
+2025-11-10T10:18:36.096035762Z INFO:     Waiting for application startup.
+2025-11-10T10:18:36.096515849Z INFO:     Application startup complete.
+2025-11-10T10:18:36.097057071Z INFO:     Uvicorn running on http://127.0.0.1:7999 (Press CTRL+C to quit)
+2025-11-10T10:18:44.636248027Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
+2025-11-10T10:18:44.904539327Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-11-10T10:18:45.542499401Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-11-10T10:18:45.577812749Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
+2025-11-10T10:18:45.577825415Z --------
+2025-11-10T10:18:45.577849314Z   warnings.warn(
+2025-11-10T10:18:45.658272122Z INFO:matplotlib.font_manager:generated new fontManager
+2025-11-10T10:18:46.444180480Z INFO:     Will watch for changes in these directories: ['/usr/src/app']
+2025-11-10T10:18:46.444348537Z INFO:     Uvicorn running on http://0.0.0.0:8081 (Press CTRL+C to quit)
+2025-11-10T10:18:46.444433947Z INFO:     Started reloader process [16] using StatReload
+2025-11-10T10:18:59.740613295Z INFO:gradio_app.backend.query_llm:Available LLMs: ['GPT-3.5', 'Salamandra (HF)', 'Whisper']
+2025-11-10T10:19:00.012009464Z INFO:httpx:HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-11-10T10:19:00.622589802Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-11-10T10:19:00.655173858Z /usr/local/lib/python3.10/site-packages/gradio/analytics.py:106: UserWarning: IMPORTANT: You are using gradio version 4.43.0, however version 4.44.1 is available, please upgrade. 
+2025-11-10T10:19:00.655212808Z --------
+2025-11-10T10:19:00.655220491Z   warnings.warn(
+2025-11-10T10:19:01.752315877Z INFO:     Started server process [35]
+2025-11-10T10:19:01.752617333Z INFO:     Waiting for application startup.
+2025-11-10T10:19:01.759000914Z INFO:     Application startup complete.
+2025-11-10T10:19:02.201387843Z INFO:httpx:HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
