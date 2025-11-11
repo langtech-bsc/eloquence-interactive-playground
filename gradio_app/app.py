@@ -11,7 +11,6 @@ import gradio as gr
 import markdown
 
 from fastapi import FastAPI, UploadFile, Form, File
-from starlette.responses import RedirectResponse
 from pydantic import TypeAdapter
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -81,20 +80,6 @@ def authenticate(user: str, password: str) -> bool:
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-
-@app.middleware("http")
-async def redirect_root_to_dev(request, call_next):
-    """If someone accesses the server root (e.g. http://host:8081/),
-    redirect them to /dev/ so asset paths match the application's ASGI root_path.
-    The reverse proxy should continue to forward /dev/ directly.
-    """
-    try:
-        if request.url.path == "/":
-            return RedirectResponse(url="/dev/")
-    except Exception:
-        pass
-    return await call_next(request)
 
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
@@ -414,15 +399,9 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     filter_column.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
     filter_value.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
 
-# Mount the Gradio UI at root ('/') inside the app and let the ASGI server
-# expose the application under the external mount point via `root_path`.
-# Use this setup when a reverse proxy forwards requests with the `/dev` prefix
-# (the ASGI `root_path` will be set to "/dev" by the server runner).
 app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("GRADIO_SERVER_PORT", 8080))
-    # Ensure the ASGI server is aware of the root path so generated URLs and
-    # mounts work correctly when the app is served under /dev.
-    uvicorn.run("gradio_app.app:app", host="0.0.0.0", port=port, reload=True, root_path="/dev")
+    uvicorn.run("gradio_app.app:app", host="0.0.0.0", port=port, reload=True)
