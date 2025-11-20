@@ -1,0 +1,26 @@
+[
+    {
+        "model_name": "gpt-3.5-turbo",
+        "model_api_id": "gpt-3.5-turbo",
+        "display_name": "GPT-3.5",
+        "api_key": "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",
+        "api_endpoint": "https://api.openai.com/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "salamandra-7b-instruct",
+        "model_api_id": "tgi",
+        "display_name": "Salamandra (HF)",
+        "api_key": "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",
+        "api_endpoint": "https://gg1brnpmx53zkhrg.eu-west-1.aws.endpoints.huggingface.cloud/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "whisper-1",
+        "model_api_id": "whisper-1",
+        "display_name": "Whisper",
+        "api_key": "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",
+        "api_endpoint": "https://api.openai.com/v1",
+        "interface": "audio"
+    }
+]
