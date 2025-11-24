@@ -93,7 +93,8 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
         temperature=kwargs.get("temperature", 1.0),
         top_p=kwargs.get("top_p", 0.95),
         max_tokens=kwargs.get("max_tokens", 300),
-        audio=audio_data
+        audio=audio_data,
+        language=kwargs.get("language")
     )
 
     for part, documents in stream:
