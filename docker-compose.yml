@@ -5,9 +5,10 @@ services:
       context: .
     pull_policy: build
     restart: unless-stopped
-    network_mode: host
+    # network_mode: host
     ports:
-      - "8080:7860"
+      # - "8080:7860"
+      - "8080:8080"
     environment:
       - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
     volumes:
