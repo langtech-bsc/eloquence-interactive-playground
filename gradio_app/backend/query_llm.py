@@ -18,15 +18,19 @@ class LLMHandler:
     def __call__(self, llm_name, system_prompt, history, documents, **params):
         llm = self._cache.get(llm_name, None)
         audio = None
+        language = None
         if "audio" in params and params["audio"] is not None:
             audio = deepcopy(params["audio"])
             del params["audio"]
+        if "language" in params and params["language"] is not None:
+            language = params["language"]
+            del params["language"]
         if llm is None:
             llm = self.get_llm_generator(llm_name)
             self._cache[llm_name] = llm
         llm.set_params(**params)
         try:
-            response = llm(documents, history, llm_name, system_prompt, audio)
+            response = llm(documents, history, llm_name, system_prompt, audio, language=language)
             return response
         except:
             raise RuntimeError
