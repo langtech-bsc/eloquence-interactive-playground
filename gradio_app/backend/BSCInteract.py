@@ -249,16 +249,15 @@ class SalamandraInteractor(BSCInteractor):
 
 
 class WhisperInteractor(BSCInteractor):
-    def __call__(self, documents, history, llm, system_prompt, audio, language=None):
+    def __call__(self, documents, history, llm, system_prompt, audio):
         from io import BytesIO
         audio = BytesIO(audio)
         audio.name = "in.wav"
-        language = language or "es"
         transcription = self.client.audio.transcriptions.create(
             file=audio,
             model=self.model_name,
-            language=language,
-            temperature=0.0,
+            language="es",
+            temperature=0.0
             )
         return transcription.text
 
