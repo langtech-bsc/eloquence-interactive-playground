@@ -403,5 +403,5 @@ app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("GRADIO_SERVER_PORT", 8080))
+    port = int(os.environ.get("GRADIO_SERVER_PORT", 8081))
     uvicorn.run("gradio_app.app:app", host="0.0.0.0", port=port, reload=True)
