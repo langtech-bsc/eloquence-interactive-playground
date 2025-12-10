@@ -12,6 +12,7 @@ def prepare_request(history: list[list[str]],
                     index_name: str,
                     sys_prompt: str,
                     task: str
+                    #language:  str
                     ):
     return {
         "data": [
@@ -24,6 +25,7 @@ def prepare_request(history: list[list[str]],
             index_name,
             sys_prompt,
             task
+            #language
         ]
     }
 

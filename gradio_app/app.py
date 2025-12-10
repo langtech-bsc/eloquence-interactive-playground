@@ -104,7 +104,7 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
         kwargs["llm_name"], kwargs.get("system_prompt"), history, query,
         kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
         temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
-        max_tokens=kwargs.get("max_tokens"), audio=audio_data
+        max_tokens=kwargs.get("max_tokens"), audio=audio_data #, language=kwargs.get("language")
     )
     
     final_text = ""
