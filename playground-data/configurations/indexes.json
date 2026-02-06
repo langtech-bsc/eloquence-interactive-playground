@@ -1,4 +1,5 @@
 {
     "Conversation1": "sentence-transformers/all-MiniLM-L6-v2",
-    "Conversation2": "sentence-transformers/all-MiniLM-L6-v2"
+    "Conversation2": "sentence-transformers/all-MiniLM-L6-v2",
+    "New": "sentence-transformers/all-MiniLM-L6-v2"
 }
