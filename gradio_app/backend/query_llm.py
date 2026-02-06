@@ -4,7 +4,7 @@ from copy import deepcopy
 from settings import settings
 from gradio_app.backend.ChatGptInteractor import ChatGptInteractor
 from gradio_app.backend.HuggingfaceGenerator import HuggingfaceGenerator
-from gradio_app.backend.BSCInteract import OlmoInteractor, EurollmInteractor, QwenInteractor, SalamandraInteractor, QwenInteractor, WhisperInteractor
+from gradio_app.backend.BSCInteract import OlmoInteractor, EurollmInteractor, QwenInteractor, SalamandraInteractor, GemmaInteractor, ApertusInteractor, WhisperInteractor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,10 +19,10 @@ class LLMHandler:
         llm = self._cache.get(llm_name, None)
         audio = None
         language = None
-        if "audio" in params and params["audio"] is not None:
+        if "audio" in params:
             audio = deepcopy(params["audio"])
             del params["audio"]
-        if "language" in params and params["language"] is not None:
+        if "language" in params:
             language = params["language"]
             del params["language"]
         if llm is None:
@@ -30,10 +30,11 @@ class LLMHandler:
             self._cache[llm_name] = llm
         llm.set_params(**params)
         try:
-            response = llm(documents, history, llm_name, system_prompt, audio) #, language=language)
+            response = llm(documents, history, llm_name, system_prompt, audio, language=language)
             return response
-        except:
-            raise RuntimeError
+        except Exception as exc:
+            logger.exception("LLM request failed for %s", llm_name)
+            raise RuntimeError(str(exc))
         
     def get_llm_generator(self, model_name):
         model_entry = self.available_llms[model_name]
@@ -65,6 +66,16 @@ class LLMHandler:
                 return cgi
             if "qwen" in  model_name.lower():
                 cgi = QwenInteractor(
+                    api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
+                )
+                return cgi
+            if "gemma" in  model_name.lower():
+                cgi = GemmaInteractor(
+                    api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
+                )
+                return cgi
+            if "apertus" in  model_name.lower():
+                cgi = ApertusInteractor(
                     api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )
                 return cgi

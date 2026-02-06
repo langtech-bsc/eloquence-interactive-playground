@@ -24,8 +24,15 @@ from gradio_app.app_handlers import (
     validate_interaction,
     interact,
     change_retriever,
-    save_prompt,
+    save_system_prompt,
+    load_system_prompt_preview,
+    load_system_prompt_confirm,
+    refresh_system_prompts,
     store_history,
+    load_history,
+    load_history_preview,
+    load_history_confirm,
+    summarize_conversation,
     save_feedback,
     upload_file_for_ingest,
     validate_ingestion_inputs,
@@ -35,7 +42,11 @@ from gradio_app.app_handlers import (
     _load_feedback_df,
     dynamic_data,
     llm_handler,
-    load_task
+    load_task,
+    update_llm_choices,
+    update_text_llm_choices,
+    update_llm_params_visibility,
+    update_rag_params_visibility,
 )
 
 # --- Logging ---
@@ -84,7 +95,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
     if kwargs["llm_name"] not in available_llms.keys():
-        return ResponseQueryLLM(text="", documents=[], error="Unknown LLM")
+        return "", []  # Return empty text and documents for unknown LLM
     
     _, task_configs_list = _get_task_configs()
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
@@ -104,14 +115,17 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
         kwargs["llm_name"], kwargs.get("system_prompt"), history, query,
         kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
         temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
-        max_tokens=kwargs.get("max_tokens"), audio=audio_data #, language=kwargs.get("language")
+        max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language")
     )
     
     final_text = ""
     final_docs = []
     for updated_history, docs in stream:
         final_text = updated_history[-1][1]
-        final_docs = [extract_docs_from_rendered_template(markdown.markdown(d)) for d in docs]
+        if docs:
+            final_docs = [d if isinstance(d, str) else str(d) for d in docs]
+        else:
+            final_docs = []
     
     return final_text, final_docs
 
@@ -120,7 +134,19 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
 async def upload_audio_chunk(audio_chunk: UploadFile):
     """Accepts a streaming audio chunk and adds it to the buffer."""
     data = await audio_chunk.read()
+    logger.info("Audio chunk received: %d bytes", len(data))
     dynamic_data["audio_buffer"].extend(data)
+    return {"status": "ok", "size_received": len(data)}
+
+
+@app.post("/stream_finalize")
+async def upload_audio_final(audio_file: UploadFile):
+    """Accepts the final recording blob and replaces the buffer."""
+    data = await audio_file.read()
+    logger.info("Final audio received: %d bytes, content_type=%s", len(data), audio_file.content_type)
+    if not data:
+        return {"status": "error", "size_received": 0}
+    dynamic_data["audio_buffer"] = bytearray(data)
     return {"status": "ok", "size_received": len(data)}
 
 
@@ -128,10 +154,18 @@ async def upload_audio_chunk(audio_chunk: UploadFile):
 async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadFile] = File(None)):
     """Primary endpoint for submitting a single query to the LLM."""
     request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
-    response_text, documents = await query_llm_general(available_llms=llm_handler.available_llms, audio_file=audio_file, **request_data.model_dump())
-    if len(documents) < 2:
-        documents = []
-    return ResponseQueryLLM(text=response_text, documents=documents)
+    try:
+        response_text, documents = await query_llm_general(
+            available_llms=llm_handler.available_llms,
+            audio_file=audio_file,
+            **request_data.model_dump()
+        )
+        if len(documents) < 2:
+            documents = []
+        return ResponseQueryLLM(text=response_text, documents=documents)
+    except Exception as exc:
+        logger.exception("Query failed")
+        return ResponseQueryLLM(text="", documents=[], error=str(exc))
 
 
 @app.post("/batch_query", response_model=ResponseBatchQuery)
@@ -160,18 +194,20 @@ async def ingest_endpoint(content_file: UploadFile, body: str = Form(...)):
         with tempfile.NamedTemporaryFile(delete=False, suffix=content_file.filename) as tmp:
             shutil.copyfileobj(content_file.file, tmp.file)
             temp_file_path = tmp.name
-
         # Call the same ingestion logic used by the UI
         perform_ingest(
             index_name=request.index_name,
             chunk_size=request.chunk_size,
             percentile=request.percentile,
             embed_name=request.embed_name,
-            file_paths=[os.path.basename(temp_file_path)], # Pass base name
+            file_paths=[temp_file_path], # Pass base name
             splitting_strategy=request.splitting_strategy,
             retriever_address=request.retriever_address
         )
-        os.unlink(temp_file_path) # Clean up the temp file
+        try:
+            os.unlink(temp_file_path)
+        except FileNotFoundError:
+            pass
         return ResponseIngest(status="success", msg="Document ingested successfully.")
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
@@ -255,7 +291,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     user_additional_feedback_submit = gr.Button("Submit Feedback")
                 
                 # Input UI
-                with gr.Row():
+                with gr.Row(elem_id="input_controls_row"):
                     with gr.Column(visible=True) as text_column:
                         input_textbox = gr.Textbox(
                             scale=3,
@@ -265,41 +301,88 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     with gr.Column(visible=False) as audio_column:
                         hidden_submit_btn = gr.Button(visible=False, elem_id="trigger_audio_submit")
                         html = """
-                        <button class="lg secondary  svelte-cmf5ev" onclick="startStreaming()">Start Streaming &#128266;</button>
-                        <button class="lg secondary  svelte-cmf5ev" onclick="stopStreaming();document.getElementById('trigger_audio_submit').click();">Stop Streaming</button>
-                        <p id="recordstatus">Recording stopped.</p>
+                        <div class="audio-controls">
+                            <div class="audio-record-buttons">
+                                <button class="lg secondary  svelte-cmf5ev" onclick="startStreaming()">Start Recording</button>
+                                <button class="lg secondary  svelte-cmf5ev" onclick="stopStreaming()">Stop Recording</button>
+                            </div>
+                            <div class="audio-playback">
+                                <audio id="recorded_audio" controls></audio>
+                            </div>
+                            <div id="recordstatus" class="audio-status"></div>
+                        </div>
                         """
 
                         audio_object = gr.HTML(html)
-                    # input_textbox = gr.Textbox(scale=4, show_label=False, placeholder="Type your message here...", container=False)
-                    submit_btn = gr.Button("Submit")
-                    clear_btn = gr.Button("Clear")
+                        language_dropdown = gr.Dropdown(
+                            label="Language",
+                            choices=[
+                                ("English", "en"),
+                                ("Spanish", "es"),
+                                ("Italian", "it"),
+                                ("Greek", "el"),
+                                ("Serbian", "sr"),
+                            ],
+                            value="en",
+                            visible=False
+                        )
+                    with gr.Column():
+                        with gr.Row(elem_id="submit_clear_row"):
+                            submit_btn = gr.Button("Submit", elem_id="submit_btn")
+                            clear_btn = gr.Button("Clear")
+                        summarize_btn = gr.Button("Summarize conversation", visible=False)
 
                 gr.Examples(examples, input_textbox)
 
             # RAG and settings column
             with gr.Column(scale=1):
                 with gr.Accordion("Settings & Configuration", open=False):
-                    llm_name = gr.Radio(label='Available LLMs')
-                    task_config = gr.Radio(label="Task configuration")
-                    retrievers_radio = gr.Radio(label="Vector Store")
-                    index_name = gr.Radio(label="Index name")
+                    task_config = gr.Radio(label="Task configuration", elem_id="task_config")
+                    audio_qa_mode = gr.Radio(
+                        label="Audio QA Mode",
+                        choices=[("Whisper + LLM", "whisper_llm"), ("Speech LLM", "speech_llm")],
+                        visible=False,
+                        elem_id="audio_qa_mode",
+                    )
+                    llm_name = gr.Radio(label="Available LLMs", visible=False, elem_id="llm_name")
+                    text_llm_name = gr.Radio(label="Text LLM", visible=False, elem_id="text_llm_name")
+                    retrievers_radio = gr.Radio(label="Vector Store", visible=False)
+                    index_name = gr.Radio(label="Index name", visible=False)
                     system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
                     
                     with gr.Row():
-                        selected_prompt = gr.Dropdown(label="Load Saved Prompt", interactive=True)
-                        save_prompt_btn = gr.Button("Save Prompt")
+                        load_prompt_btn = gr.Button("Load System Prompt")
+                        save_prompt_btn = gr.Button("Save System Prompt")
 
                     with gr.Row():
-                        selected_logs = gr.Dropdown(label="Load History", interactive=True)
-                        select_log_btn = gr.Button("Load History")
+                        load_history_btn = gr.Button("Load History")
                         save_btn = gr.Button("Save History")
                 
-                with gr.Accordion("LLM Parameters", open=False):
-                    docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
+                with gr.Accordion("LLM Parameters", open=False, visible=False) as llm_params_accordion:
                     temp = gr.Slider(0, 2, value=1.0, step=0.1, label="Temperature")
                     top_p = gr.Slider(0, 1, value=0.95, step=0.05, label="Top P")
                     max_tokens = gr.Slider(100, 4000, value=512, step=64, label="Max tokens")
+                
+                with gr.Accordion("RAG Parameters", open=False, visible=False) as rag_params_accordion:
+                    docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
+
+                summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
+
+                with gr.Column(visible=False, elem_id="prompt_panel") as prompt_panel:
+                    gr.Markdown("### Select A System Prompt")
+                    prompt_radio = gr.Radio(label="Saved System Prompts", interactive=True, elem_id="prompt_radio")
+                    prompt_preview = gr.Textbox(label="Preview", lines=6, interactive=False)
+                    with gr.Row():
+                        confirm_prompt_btn = gr.Button("Confirm")
+                        close_prompt_btn = gr.Button("Close")
+
+                with gr.Column(visible=False, elem_id="history_panel") as history_panel:
+                    gr.Markdown("### Select A History")
+                    history_radio = gr.Radio(label="Saved Histories", interactive=True, elem_id="history_radio")
+                    history_preview = gr.Textbox(label="Preview", lines=8, interactive=False)
+                    with gr.Row():
+                        confirm_history_btn = gr.Button("Confirm")
+                        close_history_btn = gr.Button("Close")
                 
                 # RAG context display
                 with gr.Column(visible=False) as rag_column:
@@ -347,27 +430,118 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     demo.load(
         get_dynamic_components,
         [],
-        [task_config, selected_prompt, selected_logs, llm_name, retrievers_radio, retrievers_radio_ing, feedback_df, filter_column]
+        [task_config, prompt_radio, history_radio, llm_name, retrievers_radio, retrievers_radio_ing, feedback_df, filter_column]
     )
 
     # --- Playground Events ---
     submit_btn.click(
         validate_interaction,
-        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config],
+        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
         None
     ).success(
         interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [chatbot, context_html, rag_column, input_textbox]
+    ).then(
+        lambda: gr.update(interactive=True), None, [input_textbox]
+    )
+
+    hidden_submit_btn.click(
+        validate_interaction,
+        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
+        None
+    ).success(
+        interact,
+        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
         [chatbot, context_html, rag_column, input_textbox]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
     
-    clear_btn.click(lambda: ([], "", None, gr.update(visible=False)), [], [chatbot, system_prompt, selected_prompt, rag_column])
+    clear_btn.click(lambda: ([], "", gr.update(value=None), "", gr.update(visible=False)), [], [chatbot, system_prompt, prompt_radio, summary_box, rag_column])
+    summarize_btn.click(
+        summarize_conversation,
+        [chatbot, llm_name, task_config, system_prompt, temp, top_p, max_tokens],
+        [summary_box],
+    )
     retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
-    task_config.change(load_task, [task_config], [text_column, audio_column, submit_btn])
-    save_prompt_btn.click(save_prompt, [system_prompt], None)
-    save_btn.click(store_history, [chatbot, system_prompt], None)
+    task_config.change(
+        load_task,
+        [task_config],
+        [
+            text_column,
+            audio_column,
+            submit_btn,
+            language_dropdown,
+            llm_params_accordion,
+            audio_qa_mode,
+            retrievers_radio,
+            index_name,
+            rag_column,
+            summarize_btn,
+            summary_box,
+            text_llm_name,
+            rag_params_accordion,
+        ]
+    ).then(
+        update_llm_choices,
+        [task_config, audio_qa_mode],
+        [llm_name],
+    ).then(
+        update_text_llm_choices,
+        [task_config, audio_qa_mode],
+        [text_llm_name],
+    ).then(
+        update_llm_params_visibility,
+        [task_config, audio_qa_mode],
+        [llm_params_accordion],
+    ).then(
+        update_rag_params_visibility,
+        [task_config],
+        [rag_params_accordion],
+    )
+    audio_qa_mode.change(
+        update_llm_choices,
+        [task_config, audio_qa_mode],
+        [llm_name],
+    ).then(
+        update_text_llm_choices,
+        [task_config, audio_qa_mode],
+        [text_llm_name],
+    ).then(
+        update_llm_params_visibility,
+        [task_config, audio_qa_mode],
+        [llm_params_accordion],
+    )
+    load_prompt_btn.click(refresh_system_prompts, [], [prompt_radio]).then(
+        lambda: gr.update(visible=True), None, [prompt_panel]
+    )
+    close_prompt_btn.click(lambda: gr.update(visible=False), None, [prompt_panel])
+    prompt_radio.change(
+        load_system_prompt_preview,
+        [prompt_radio],
+        [prompt_preview]
+    )
+    confirm_prompt_btn.click(
+        load_system_prompt_confirm,
+        [prompt_radio],
+        [system_prompt, prompt_panel]
+    )
+
+    save_prompt_btn.click(save_system_prompt, [system_prompt], [prompt_radio])
+    save_btn.click(store_history, [chatbot, system_prompt], [history_radio])
+    load_history_btn.click(lambda: gr.update(visible=True), None, [history_panel])
+    close_history_btn.click(lambda: gr.update(visible=False), None, [history_panel])
+    history_radio.change(
+        load_history_preview,
+        [history_radio],
+        [history_preview]
+    )
+    confirm_history_btn.click(
+        load_history_confirm,
+        [history_radio],
+        [chatbot, system_prompt, history_panel]
+    )
     
     chatbot.like(
         show_feedback, 
@@ -403,5 +577,5 @@ app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("GRADIO_SERVER_PORT", 8081))
+    port = int(os.environ.get("GRADIO_SERVER_PORT", 8080))
     uvicorn.run("gradio_app.app:app", host="0.0.0.0", port=port, reload=True)

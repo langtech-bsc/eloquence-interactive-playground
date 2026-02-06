@@ -14,6 +14,7 @@ class RequestQueryLLM(BaseModel):
     index_name: Optional[str]
     retriever_address: Optional[str] = "public"
     system_prompt: Optional[str] = None
+    language: Optional[str] = None
 
 
 class RequestBatchQuery(BaseModel):

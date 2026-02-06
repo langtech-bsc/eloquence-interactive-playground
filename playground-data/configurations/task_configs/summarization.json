@@ -1,0 +1,6 @@
+{
+    "name": "Summarization",
+    "RAG": false,
+    "interface": "text",
+    "service": "local"
+}

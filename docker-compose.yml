@@ -1,12 +1,11 @@
-version: "3"
 services:
+
   gradio:
-    build:
+    build: 
       context: .
     pull_policy: build
     restart: unless-stopped
-    network_mode: "host"
+    ports:
+      - "8080:7860"
     environment:
       - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
-    volumes:
-      - ./playground-data:/data

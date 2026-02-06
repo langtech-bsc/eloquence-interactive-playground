@@ -17,7 +17,17 @@ class LocalTaskHandler:
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
         if not check_llm_interface(llm_name, self.task_config["interface"], available_llms=self.llm_handler.available_llms):
             raise ValueError(f"LLM {llm_name} does not support the required interface {self.task_config['interface']}.")
-        documents = [""]
+        if self.task_config.get("interface") == "audio":
+            audio_mode = self.task_config.get("audio_mode")
+            if audio_mode:
+                entry = self.llm_handler.available_llms.get(llm_name, {})
+                haystack = " ".join([llm_name, entry.get("model_name", ""), entry.get("model_api_id", "")]).lower()
+                is_whisper = "whisper" in haystack
+                if audio_mode == "transcription" and not is_whisper:
+                    raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper model.")
+                if audio_mode == "qa" and is_whisper:
+                    raise ValueError(f"Task {self.task_config.get('name', 'Audio QA')} does not support Whisper.")
+        documents = []
         if self.task_config["RAG"]:
             documents = self.retriever.search(index_name, query, docs_k)
         for part in self.llm_handler(llm_name, system_prompt, history, documents, **params):

@@ -27,11 +27,17 @@
 </head>
 <body>
 <div id="context_side">
+{% if documents|length == 0 %}
+    <div class="doc-box">
+        No documents retrieved yet.
+    </div>
+{% else %}
 {% for doc in documents %}
-    <div class="doc-box" id="doc_{{loop.index}}", style="display:none">
+    <div class="doc-box" id="doc_{{loop.index}}">
         {{ doc | safe}}
     </div>
 {% endfor %}
+{% endif %}
 </div>
 
 

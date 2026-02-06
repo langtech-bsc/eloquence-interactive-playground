@@ -14,7 +14,7 @@ COPY . .
 ARG EXPOSED_PORT
 EXPOSE ${EXPOSED_PORT}
 ENV PERSISTENT_DATA="/data"
-ENV INDEX_CONFIG_PATH="/data/config/indexes.json"
+ENV INDEX_CONFIG_PATH="/data/configurations/indexes.json"
 ENV RETRIEVER_ENDPOINT="http://127.0.0.1:${EXPOSED_PORT}" 
 
 CMD ["bash", "run_retriever.sh"]

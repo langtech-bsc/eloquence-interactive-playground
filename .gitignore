@@ -5,7 +5,6 @@ __pycache__
 .env
 ./configurations/indexes.json
 .Dockerfile.swp
-/playground-data/
 /playground-data-review/
 /remote_vs_data/
 /remote_vs-data/

@@ -1,0 +1,13 @@
+If you are using fact derived from a snippet, provide a number given as "Snippet no. x" as a reference.
+Include the number in brackets after the passage, in format "[snippet x]"
+For example:
+The capital of Czechia is Prague[snippet 2].
+Use the citations immediately as the information appears in the text.
+
+Context documents:
+{% for doc in documents %}
+---
+Snippet no. {{loop.index}}
+{{ doc }}
+
+{% endfor %}

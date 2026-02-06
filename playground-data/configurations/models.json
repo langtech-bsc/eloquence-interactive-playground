@@ -1,0 +1,50 @@
+[
+    {
+        "model_name": "salamandra-7b-instruct",
+        "model_api_id": "tgi",
+        "display_name": "Salamandra (HF)",
+        "api_key": "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",
+        "api_endpoint": "https://gg1brnpmx53zkhrg.eu-west-1.aws.endpoints.huggingface.cloud/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "whisper-1",
+        "model_api_id": "whisper-1",
+        "display_name": "Whisper",
+        "api_key": "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",
+        "api_endpoint": "https://api.openai.com/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "salamandra-7b-instruct",
+        "model_api_id": "",
+        "display_name": "Salamandra (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10005/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "gemma-3-27b-it",
+        "model_api_id": "",
+        "display_name": "Gemma (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10006/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "Apertus-8B-Instruct-2509",
+        "model_api_id": "",
+        "display_name": "Apertus (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10003/v1",
+        "interface": "text"
+    },
+    {  
+        "model_name": "Qwen2.5-Audio",
+        "model_api_id": "",
+        "display_name": "Qwen2.5 (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10003/v1",
+        "interface": "audio"
+    }
+]

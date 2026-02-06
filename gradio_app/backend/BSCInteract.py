@@ -32,22 +32,24 @@ class BSCInteractor:
         )
         logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
     
-    def __call__(self, documents, history, llm, system_prompt, audio=None):
+    def __call__(self, documents, history, llm, system_prompt, audio=None, language=None):
         messages = self.build_messages(documents, history, llm, system_prompt, audio)
         return self.chat_completion(messages)
     
     def build_messages(self, documents, history, llm, system_prompt, audio):
         context = ""
-        while len(documents) > 0:
-            context = context_template.render(documents=documents)
-            messages = self._construct_message_list(llm, system_prompt, context, history, audio)
-            try:
-                num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
-            except:
-                num_tokens = len(str(messages).split()) * 2
-            if num_tokens + 512 < settings.LLM_CONTEXT_LENGHTS[llm]:
-                break
-            documents.pop()
+        if len(documents) > 0:
+            while len(documents) > 0:
+                context = context_template.render(documents=documents)
+                messages = self._construct_message_list(llm, system_prompt, context, history, audio)
+                try:
+                    num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
+                except:
+                    num_tokens = len(str(messages).split()) * 2
+                max_ctx = settings.LLM_CONTEXT_LENGHTS.get(llm, 4096) # default fallback to 4096
+                if num_tokens + 512 < max_ctx:
+                    break
+                documents.pop()
         messages = self._construct_message_list(llm, system_prompt, context, history, audio)
         return messages
     
@@ -58,10 +60,11 @@ class BSCInteractor:
         logger.info(f'Sending request to {self.model_name} stream={self.stream} ...')
         t1 = time.time()
         try:
+            logger.info(f'Sent messages: {messages}')
             completion = self._request(messages)
-        except:
-            logger.error("Failed generating response!")
-            return ""
+        except Exception as exc:
+            logger.exception("Failed generating response!")
+            raise RuntimeError(str(exc))
 
         if self.stream:
             return self._generator(completion)
@@ -103,13 +106,15 @@ class BSCInteractor:
 
         return completion
 
-
 class OlmoInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         messages = []
         for q, a in history:
             if len(a) == 0:  # the last message
-                q = system_prompt + " Context: " + context + " " + q
+                if context:
+                    q = system_prompt + " Context: " + context + " " + q
+                else:
+                    q = system_prompt + " " + q
             if len(a) != 0:
                 messages.append({
                     "role": "user",
@@ -133,39 +138,15 @@ class OlmoInteractor(BSCInteractor):
                 })
         return messages
 
-
-class SalamandraInteractor(BSCInteractor):
-    def _construct_message_list(self, llm, system_prompt, context, history, audio):
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt,
-            }
-        ]
-        for q, a in history:
-            if len(a) == 0:  # the last message
-                messages.append({
-                    "role": "system",
-                    "content": context,
-                })
-            messages.append({
-                "role": "user",
-                "content": q,
-            })
-            if len(a) != 0:  # some of the previous LLM answers
-                messages.append({
-                    "role": "assistant",
-                    "content": reverse_doc_links(a),
-                })
-        return messages
-
-
 class EurollmInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         messages = []
         for q, a in history:
             if len(a) == 0:  # the last message
-                q = system_prompt + " Context: " + context + " " + q
+                if context:
+                    q = system_prompt + " Context: " + context + " " + q
+                else:
+                    q = system_prompt + " " + q
             if len(a) != 0:
                 messages.append({
                     "role": "user",
@@ -189,13 +170,15 @@ class EurollmInteractor(BSCInteractor):
                 })
         return messages
 
-
 class QwenInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         messages = []
         for q, a in history:
             if len(a) == 0:  # the last message
-                q = system_prompt + " Context: " + context + " " + q
+                if context:
+                    q = system_prompt + " Context: " + context + " " + q
+                else:
+                    q = system_prompt + " " + q
             if audio is None or len(a) != 0:
                 messages.append({
                     "role": "user",
@@ -226,13 +209,61 @@ class QwenInteractor(BSCInteractor):
                 })
         return messages
 
+class GemmaInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        for idx, (q, a) in enumerate(history):
+            if idx == 0 and system_prompt:
+                q = system_prompt + "\n\n" + q
+            if len(a) == 0 and context:
+                q = "Context: " + context + "\n\n" + q
+            messages.append({
+                "role": "user",
+                "content": q,
+            })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+        return messages
+
+class ApertusInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        system_content = system_prompt or ""
+        if context:
+            if system_content:
+                system_content = system_content + " Context: " + context
+            else:
+                system_content = "Context: " + context
+        if system_content:
+            messages.append({
+                "role": "system",
+                "content": system_content,
+            })
+        for q, a in history:
+            messages.append({
+                "role": "user",
+                "content": q,
+            })
+            if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+        return messages
 
 class SalamandraInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        if context:
+            system_content = system_prompt + " Context: " + context
+        else:
+            system_content = system_prompt
         messages = [
             {
                 "role": "system",
-                "content": system_prompt + " Context: " + context,
+                "content": system_content,
             }
         ]
         for q, a in history:
@@ -247,18 +278,21 @@ class SalamandraInteractor(BSCInteractor):
                 })
         return messages
 
-
+    
+    
 class WhisperInteractor(BSCInteractor):
-    def __call__(self, documents, history, llm, system_prompt, audio): #, language=None):
+    def __call__(self, documents, history, llm, system_prompt, audio, language=None):
         from io import BytesIO
-        audio = BytesIO(audio)
-        audio.name = "in.wav"
-        language = "es"
+        from gradio_app.helpers import detect_audio_format, bytes_to_wav
+        audio_bytes = bytes(audio)
+        audio_format = detect_audio_format(audio_bytes)
+        if audio_format != "wav":
+            audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+        audio = BytesIO(audio_bytes)
+        audio.name = "input." + audio_format
         transcription = self.client.audio.transcriptions.create(
             file=audio,
             model=self.model_name,
             language=language,
-            temperature=0.0,
             )
         return transcription.text
-

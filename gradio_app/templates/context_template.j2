@@ -1,13 +1,13 @@
-If you are using fact derived from a snippet, provide a number given as "Document no. x" as a reference.
+If you are using fact derived from a document, provide a number given as "Doc no. x" as a reference.
 Include the number in brackets after the passage, in format "[doc x]"
 For example:
-The capital of Czechia is Prague[doc 2].
+The capital of Czechia is Prague [doc 2].
 Use the citations immediately as the information appears in the text.
 
 Context documents:
 {% for doc in documents %}
 ---
-Document no. {{loop.index}}
+Doc no. {{loop.index}}
 {{ doc }}
 
 {% endfor %}
