@@ -284,6 +284,7 @@ class WhisperInteractor(BSCInteractor):
     def __call__(self, documents, history, llm, system_prompt, audio, language=None):
         from io import BytesIO
         from gradio_app.helpers import detect_audio_format, bytes_to_wav
+        logger.info("WhisperInteractor language=%s", language)
         audio_bytes = bytes(audio)
         audio_format = detect_audio_format(audio_bytes)
         if audio_format != "wav":
