@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from gradio_app.helpers import  extract_docs_from_rendered_template
 from gradio_app.messages import *
 from retrievers.client import RetrieverClient
-from settings import settings
+from settings import settings, normalize_path_prefix
 from gradio_app.app_handlers import (
     _get_task_configs,
     _process_llm_request,
@@ -52,6 +52,65 @@ from gradio_app.app_handlers import (
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class SubpathMiddleware:
+    def __init__(self, app, *, settings):
+        self.app = app
+        self.settings = settings
+
+    def _decode_headers(self, scope):
+        headers = {}
+        for name, value in scope.get("headers", []):
+            try:
+                header_name = name.decode("latin-1").lower()
+                header_value = value.decode("latin-1")
+            except UnicodeDecodeError:
+                continue
+            headers[header_name] = header_value
+        return headers
+
+    def _header_prefix(self, headers):
+        for header_name in self.settings.PATH_PREFIX_HEADERS:
+            header_value = headers.get(header_name)
+            if header_value:
+                normalized = normalize_path_prefix(header_value)
+                if normalized:
+                    return normalized
+        return ""
+
+    def _match_path_prefix(self, path: str) -> str:
+        for prefix in self.settings.PATH_PREFIXES:
+            if prefix and path.startswith(prefix):
+                return prefix
+        return ""
+
+    def _strip_prefix(self, scope, prefix: str):
+        path = scope.get("path", "")
+        stripped = path[len(prefix):]
+        if not stripped:
+            stripped = "/"
+        elif not stripped.startswith("/"):
+            stripped = f"/{stripped}"
+        scope["path"] = stripped
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = self._decode_headers(scope)
+        prefix = self._header_prefix(headers)
+        if not prefix:
+            prefix = self._match_path_prefix(scope.get("path", ""))
+        if not prefix:
+            prefix = normalize_path_prefix(self.settings.ROOT_PATH)
+
+        if prefix and scope.get("path", "").startswith(prefix):
+            self._strip_prefix(scope, prefix)
+
+        scope["root_path"] = prefix or ""
+        await self.app(scope, receive, send)
 
 def show_feedback(request: gr.Request, x: gr.LikeData):
     # This is currently not used:  x.index[0], x.index[1]
@@ -91,6 +150,7 @@ def authenticate(user: str, password: str) -> bool:
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(SubpathMiddleware, settings=settings)
 
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
@@ -573,9 +633,21 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     filter_column.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
     filter_value.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
 
-app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
+app = gr.mount_gradio_app(
+    app,
+    demo,
+    path="/",
+    auth=authenticate,
+    root_path=settings.ROOT_PATH,
+)
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("GRADIO_SERVER_PORT", 8080))
-    uvicorn.run("gradio_app.app:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(
+        "gradio_app.app:app",
+        host="0.0.0.0",
+        port=port,
+        root_path=settings.ROOT_PATH,
+        reload=True,
+    )
