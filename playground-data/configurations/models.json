@@ -17,10 +17,26 @@
     },
     {
         "model_name": "salamandra-7b-instruct",
-        "model_api_id": "",
-        "display_name": "Salamandra (TID)",
+        "model_api_id": "tgi",
+        "display_name": "Salamandra (MN5)",
+        "api_key": "key",
+        "api_endpoint": "http://127.0.0.1:8082/v1/",
+        "interface": "text"
+    },
+    {
+        "model_name": "salamandra-7b-instruct",
+        "model_api_id": "tgi",
+        "display_name": "Salamandra (MN5) [9101]",
         "api_key": "",
-        "api_endpoint": "http://127.0.0.1:10005/v1",
+        "api_endpoint": "http://84.88.53.199:9101/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "eloquence_adapter",
+        "model_api_id": "eloquence_adapter",
+        "display_name": "Salamandra (MN5) + LoRA",
+        "api_key": "",
+        "api_endpoint": "http://84.88.53.199:9101/v1",
         "interface": "text"
     },
     {
@@ -39,7 +55,7 @@
         "api_endpoint": "http://127.0.0.1:10003/v1",
         "interface": "text"
     },
-    {  
+    {
         "model_name": "Qwen2.5-Audio",
         "model_api_id": "",
         "display_name": "Qwen2.5 (TID)",
