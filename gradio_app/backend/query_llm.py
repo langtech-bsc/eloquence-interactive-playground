@@ -4,7 +4,7 @@ from copy import deepcopy
 from settings import settings
 from gradio_app.backend.ChatGptInteractor import ChatGptInteractor
 from gradio_app.backend.HuggingfaceGenerator import HuggingfaceGenerator
-from gradio_app.backend.BSCInteract import OlmoInteractor, EurollmInteractor, QwenInteractor, SalamandraInteractor, GemmaInteractor, ApertusInteractor, WhisperInteractor
+from gradio_app.backend.BSCInteract import OlmoInteractor, EurollmInteractor, QwenInteractor, SalamandraInteractor, GemmaInteractor, ApertusInteractor, WhisperInteractor, SDialogInteractor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,7 +16,9 @@ class LLMHandler:
         self._cache = {}
     
     def __call__(self, llm_name, system_prompt, history, documents, **params):
-        llm = self._cache.get(llm_name, None)
+        task_name = params.pop("task_name", None)
+        cache_key = f"{task_name}::{llm_name}" if task_name else llm_name
+        llm = self._cache.get(cache_key, None)
         audio = None
         language = None
         if "audio" in params:
@@ -26,8 +28,8 @@ class LLMHandler:
             language = params["language"]
             del params["language"]
         if llm is None:
-            llm = self.get_llm_generator(llm_name)
-            self._cache[llm_name] = llm
+            llm = self.get_llm_generator(llm_name, task_name=task_name)
+            self._cache[cache_key] = llm
         llm.set_params(**params)
         try:
             response = llm(documents, history, llm_name, system_prompt, audio, language=language)
@@ -36,8 +38,13 @@ class LLMHandler:
             logger.exception("LLM request failed for %s", llm_name)
             raise RuntimeError(str(exc))
         
-    def get_llm_generator(self, model_name):
+    def get_llm_generator(self, model_name, task_name=None):
         model_entry = self.available_llms[model_name]
+        if task_name == "SDialog":
+            cgi = SDialogInteractor(
+                api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
+            )
+            return cgi
         if "gpt" in model_name.lower():
             cgi = ChatGptInteractor(
                 model_name=model_entry["model_name"], max_tokens=512, temperature=0, stream=False, api_endpoint=model_entry["api_endpoint"], api_key=model_entry.get("api_key", None)
@@ -80,7 +87,6 @@ class LLMHandler:
                 )
                 return cgi
             if "whisper" in  model_name.lower():
-                print("WHIII")
                 cgi = WhisperInteractor(
                     api_endpoint=model_entry["api_endpoint"], model_name=model_entry["model_name"], api_key=model_entry.get("api_key", None)
                 )

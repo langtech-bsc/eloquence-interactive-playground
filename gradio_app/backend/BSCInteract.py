@@ -24,14 +24,12 @@ class BSCInteractor:
             "max_tokens": max_tokens,
             "top_p": top_p
         }
-        logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
+        logger.info(f"Creating with endpoint  {self.api_endpoint} and model_name {self.model_name}")
         self.stream = stream
         self.client = openai.OpenAI(
             base_url=self.api_endpoint,
             api_key=api_key
-        )
-        logger.info("Creating with endpoint and name:" + api_endpoint + model_name)
-    
+        )    
     def __call__(self, documents, history, llm, system_prompt, audio=None, language=None):
         messages = self.build_messages(documents, history, llm, system_prompt, audio)
         return self.chat_completion(messages)
@@ -62,6 +60,7 @@ class BSCInteractor:
         try:
             logger.info(f'Sent messages: {messages}')
             completion = self._request(messages)
+            print("Received completion:", completion)
         except Exception as exc:
             logger.exception("Failed generating response!")
             raise RuntimeError(str(exc))
@@ -70,11 +69,16 @@ class BSCInteractor:
             return self._generator(completion)
 
         t2 = time.time()
-        usage = completion.usage
-        logger.info(
-            f'Received response: {usage.prompt_tokens} in + {usage.completion_tokens} out'
-            f' = {usage.total_tokens} total tokens. Time: {t2 - t1:3.1f} seconds'
-        )
+        usage = getattr(completion, "usage", None)
+        if usage is not None:
+            logger.info(
+                f'Received response: {usage.prompt_tokens} in + {usage.completion_tokens} out'
+                f' = {usage.total_tokens} total tokens. Time: {t2 - t1:3.1f} seconds'
+            )
+        else:
+            logger.info(
+                f"Received response without token usage metadata. Time: {t2 - t1:3.1f} seconds"
+            )
         return completion.choices[0].message.content
 
     @staticmethod
@@ -248,6 +252,33 @@ class ApertusInteractor(BSCInteractor):
                 "content": q,
             })
             if len(a) != 0:  # some of the previous LLM answers
+                messages.append({
+                    "role": "assistant",
+                    "content": reverse_doc_links(a),
+                })
+        return messages
+
+
+class SDialogInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+        system_content = (system_prompt or "").strip()
+        if context:
+            if system_content:
+                system_content = system_content + " Context: " + context
+            else:
+                system_content = "Context: " + context
+        if system_content:
+            messages.append({
+                "role": "system",
+                "content": system_content,
+            })
+        for q, a in history:
+            messages.append({
+                "role": "user",
+                "content": q,
+            })
+            if len(a) != 0:
                 messages.append({
                     "role": "assistant",
                     "content": reverse_doc_links(a),
