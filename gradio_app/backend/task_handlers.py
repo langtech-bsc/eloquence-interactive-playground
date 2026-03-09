@@ -30,7 +30,14 @@ class LocalTaskHandler:
         documents = []
         if self.task_config["RAG"]:
             documents = self.retriever.search(index_name, query, docs_k)
-        for part in self.llm_handler(llm_name, system_prompt, history, documents, **params):
+        for part in self.llm_handler(
+            llm_name,
+            system_prompt,
+            history,
+            documents,
+            task_name=self.task_config.get("name"),
+            **params,
+        ):
             yield part, documents
 
 

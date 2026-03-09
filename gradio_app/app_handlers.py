@@ -546,7 +546,7 @@ def _get_task_configs():
         content = _load_json(filepath, default={})
         if "name" in content:
             configs.append((content["name"], json.dumps(content)))
-    preferred_order = ["Basic LLM", "Summarization", "RAG", "Audio QA", "Transcription"]
+    preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "Audio QA", "Transcription"]
     order_index = {name: idx for idx, name in enumerate(preferred_order)}
     configs.sort(key=lambda item: order_index.get(item[0], len(preferred_order)))
     return gr.Radio(label="Task configuration", choices=configs), configs
@@ -579,6 +579,16 @@ def _get_historical_prompts(user: str):
     return gr.Radio(label="Saved Histories", choices=_build_history_choices(logs))
 
 def _get_online_models(available_llms):
+    def _is_sdialog_model(model_name: str) -> bool:
+        entry = available_llms.get(model_name, {})
+        identifiers = [
+            model_name,
+            entry.get("display_name", ""),
+            entry.get("model_name", ""),
+            entry.get("model_api_id", ""),
+        ]
+        return any(isinstance(value, str) and value.lower() == "scientist:latest" for value in identifiers)
+
     def _is_model_online(model_name):
         gr.Info(f"Checking availability of {model_name}")
         try:
@@ -607,12 +617,15 @@ def _get_online_models(available_llms):
 
     choices = [(llm, llm) for llm in available_llms.keys()]
     online_choices = [choice for choice in choices if _is_model_online(choice[1])]
+    # Keep task-specific models out of global/default model lists.
+    online_choices = [choice for choice in online_choices if not _is_sdialog_model(choice[1])]
     dynamic_data["online_llms"] = [c[1] for c in online_choices]
     return gr.Radio(label="Available LLMs", choices=online_choices), [c[1] for c in online_choices]
 
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     """Update LLM choices based on task interface."""
     task_config = json.loads(task_config_str) if task_config_str else {}
+    task_name = task_config.get("name")
     interface = "audio" if task_config.get("interface") == "audio" else "text"
     audio_mode = task_config.get("audio_mode")
 
@@ -624,6 +637,16 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
             entry.get("model_api_id", ""),
         ]).lower()
         return "whisper" in haystack
+
+    def _is_sdialog_model(model_name: str) -> bool:
+        entry = llm_handler.available_llms.get(model_name, {})
+        identifiers = [
+            model_name,
+            entry.get("display_name", ""),
+            entry.get("model_name", ""),
+            entry.get("model_api_id", ""),
+        ]
+        return any(isinstance(value, str) and value.lower() == "scientist:latest" for value in identifiers)
 
     online_llms = dynamic_data.get("online_llms", [])
     if online_llms:
@@ -638,6 +661,18 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
             for m in llm_handler.available_llms.values()
             if m.get("interface") == interface
         ]
+
+    if task_name == "SDialog":
+        choices = [choice for choice in choices if _is_sdialog_model(choice[1])]
+        # Fallback when online probing does not include task-specific models.
+        if not choices:
+            choices = [
+                (m["display_name"], m["display_name"])
+                for m in llm_handler.available_llms.values()
+                if m.get("interface") == interface and _is_sdialog_model(m["display_name"])
+            ]
+    else:
+        choices = [choice for choice in choices if not _is_sdialog_model(choice[1])]
 
     if interface == "audio" and audio_mode:
         if audio_mode == "transcription":
@@ -672,7 +707,20 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
             if m.get("interface") == "text"
         ]
 
-    return gr.update(choices=choices, value=None, visible=True)
+    filtered_choices = []
+    for label, value in choices:
+        entry = llm_handler.available_llms.get(value, {})
+        identifiers = [
+            value,
+            entry.get("display_name", ""),
+            entry.get("model_name", ""),
+            entry.get("model_api_id", ""),
+        ]
+        is_sdialog_model = any(isinstance(name, str) and name.lower() == "scientist:latest" for name in identifiers)
+        if not is_sdialog_model:
+            filtered_choices.append((label, value))
+
+    return gr.update(choices=filtered_choices, value=None, visible=True)
 
 def update_llm_params_visibility(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}

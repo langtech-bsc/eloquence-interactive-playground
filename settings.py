@@ -1,4 +1,5 @@
 import os
+from typing import List, Optional, Tuple
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
@@ -6,6 +7,18 @@ USER_FEEDBACK_FILE = "user_feedback.json"
 USER_HISTORY_FILE = "history.json"
 USER_PROMPTS_FILE = "prompts.json"
 USER_RETRIEVERS_FILE = "retrievers.json"
+
+
+def normalize_path_prefix(prefix: Optional[str]) -> str:
+    if not prefix:
+        return ""
+    prefix = prefix.strip()
+    if not prefix or prefix == "/":
+        return ""
+    if not prefix.startswith("/"):
+        prefix = f"/{prefix}"
+    prefix = prefix.rstrip("/")
+    return prefix
 
 class LLMEntry:
 
@@ -62,6 +75,45 @@ class Settings(BaseSettings):
     USER_WORKSPACES: str = f"{PERSISTENT_DATA_ROOT}/workspaces"
     GENERIC_UPLOAD: str = f"/tmp"
     SQL_DB: str = f"{PERSISTENT_DATA_ROOT}/ip.db"
+    ROOT_PATH: str = ""
+    PATH_PREFIXES: List[str] = ["/dev"]
+    PATH_PREFIX_HEADERS: Tuple[str, ...] = ("x-forwarded-prefix", "x-script-name")
+
+    @field_validator("ROOT_PATH", mode="before")
+    def _normalize_root_path(cls, value):
+        return normalize_path_prefix(value)
+
+    @field_validator("PATH_PREFIXES", mode="before")
+    def _normalize_path_prefixes(cls, value):
+        raw_prefixes = []
+        if isinstance(value, str):
+            raw_prefixes = value.split(",")
+        else:
+            raw_prefixes = value or []
+
+        normalized_prefixes = []
+        for entry in raw_prefixes:
+            normalized = normalize_path_prefix(entry)
+            if normalized:
+                normalized_prefixes.append(normalized)
+        return normalized_prefixes
+
+    @field_validator("PATH_PREFIX_HEADERS", mode="before")
+    def _normalize_prefix_headers(cls, value):
+        raw_headers = []
+        if isinstance(value, str):
+            raw_headers = value.split(",")
+        else:
+            raw_headers = value or []
+
+        headers = []
+        for header in raw_headers:
+            if not header:
+                continue
+            cleaned = header.strip().lower()
+            if cleaned:
+                headers.append(cleaned)
+        return tuple(headers)
 
     CSS: str = """
     button.secondary {

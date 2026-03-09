@@ -6,6 +6,9 @@ services:
     pull_policy: build
     restart: unless-stopped
     ports:
-      - "8080:7860"
+      - "8086:8086"
     environment:
       - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
+      - ROOT_PATH=/dev
+    volumes:
+      - ./playground-data:/data:rw
