@@ -10,7 +10,6 @@ from copy import deepcopy
 import markdown
 import gradio as gr
 import pandas as pd
-import requests
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.task_handlers import get_task_handler
@@ -580,6 +579,20 @@ def _get_historical_prompts(user: str):
     return gr.Radio(label="Saved Histories", choices=_build_history_choices(logs))
 
 def _get_online_models(available_llms):
+    def _build_silent_wav(sample_rate: int = 16000, duration_ms: int = 120) -> bytes:
+        import io
+        import wave
+
+        frame_count = max(1, int(sample_rate * (duration_ms / 1000.0)))
+        pcm_silence = b"\x00\x00" * frame_count  # 16-bit mono silence
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(pcm_silence)
+        return buf.getvalue()
+
     def _is_sdialog_model(model_name: str) -> bool:
         entry = available_llms.get(model_name, {})
         identifiers = [
@@ -606,35 +619,22 @@ def _get_online_models(available_llms):
                                                     max_tokens=2):
                     return True
             else:
-                entry = llm_handler.available_llms.get(model_name, {})
-                endpoint = str(entry.get("api_endpoint", "")).rstrip("/")
-                if not endpoint:
-                    return False
-                headers = {}
-                api_key = entry.get("api_key")
-                if api_key:
-                    headers["Authorization"] = f"Bearer {api_key}"
-                response = requests.get(f"{endpoint}/models", headers=headers, timeout=3)
-                if response.status_code != 200:
-                    return False
-                data = response.json()
-                listed_models = []
-                if isinstance(data, dict):
-                    listed_models = data.get("data", [])
-                elif isinstance(data, list):
-                    listed_models = data
-                expected_ids = {
-                    str(entry.get("model_name", "")).lower(),
-                    str(entry.get("model_api_id", "")).lower(),
-                    str(entry.get("display_name", "")).lower(),
-                }
-                for item in listed_models:
-                    if not isinstance(item, dict):
-                        continue
-                    model_id = str(item.get("id", "")).lower()
-                    if model_id in expected_ids:
-                        return True
-                return False
+                task_handler = get_task_handler(settings.BASIC_AUDIO_CONFIG, llm_handler, dynamic_data.get("retriever_instance"))
+                sample_audio = _build_silent_wav()
+                query = "Describe the audio."
+                history = [[query, ""]]
+                for part, documents in task_handler(
+                    model_name,
+                    "",
+                    history,
+                    query,
+                    0,
+                    "index_name",
+                    max_tokens=2,
+                    audio=sample_audio,
+                    language="en",
+                ):
+                    return True
         except Exception as e:
             logging.error(f"Error checking model {model_name}: {e}")
             return False
