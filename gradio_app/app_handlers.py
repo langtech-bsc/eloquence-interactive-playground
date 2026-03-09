@@ -10,6 +10,7 @@ from copy import deepcopy
 import markdown
 import gradio as gr
 import pandas as pd
+import requests
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.task_handlers import get_task_handler
@@ -605,10 +606,35 @@ def _get_online_models(available_llms):
                                                     max_tokens=2):
                     return True
             else:
-                task_handler = get_task_handler(settings.BASIC_AUDIO_CONFIG, llm_handler, dynamic_data.get("retriever_instance"))
-                # Avoid pinging audio models without a sample file; assume online
-                # and let the real request surface issues.
-                return True
+                entry = llm_handler.available_llms.get(model_name, {})
+                endpoint = str(entry.get("api_endpoint", "")).rstrip("/")
+                if not endpoint:
+                    return False
+                headers = {}
+                api_key = entry.get("api_key")
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                response = requests.get(f"{endpoint}/models", headers=headers, timeout=3)
+                if response.status_code != 200:
+                    return False
+                data = response.json()
+                listed_models = []
+                if isinstance(data, dict):
+                    listed_models = data.get("data", [])
+                elif isinstance(data, list):
+                    listed_models = data
+                expected_ids = {
+                    str(entry.get("model_name", "")).lower(),
+                    str(entry.get("model_api_id", "")).lower(),
+                    str(entry.get("display_name", "")).lower(),
+                }
+                for item in listed_models:
+                    if not isinstance(item, dict):
+                        continue
+                    model_id = str(item.get("id", "")).lower()
+                    if model_id in expected_ids:
+                        return True
+                return False
         except Exception as e:
             logging.error(f"Error checking model {model_name}: {e}")
             return False
