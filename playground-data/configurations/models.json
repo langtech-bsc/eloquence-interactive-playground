@@ -8,11 +8,11 @@
         "interface": "text"
     },
     {
-        "model_name": "whisper-1",
-        "model_api_id": "whisper-1",
+        "model_name": "whisper-large-v3-turbo",
+        "model_api_id": "whisper-large-v3-turbo",
         "display_name": "Whisper",
-        "api_key": "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",
-        "api_endpoint": "https://api.openai.com/v1",
+        "api_key": "local-whisper",
+        "api_endpoint": "http://127.0.0.1:8097/v1",
         "interface": "audio"
     },
     {
@@ -24,25 +24,9 @@
         "interface": "text"
     },
     {
-        "model_name": "salamandra-7b-instruct",
-        "model_api_id": "tgi",
-        "display_name": "Salamandra (MN5) [9101]",
-        "api_key": "",
-        "api_endpoint": "http://84.88.53.199:9101/v1",
-        "interface": "text"
-    },
-    {
-        "model_name": "eloquence_adapter",
-        "model_api_id": "eloquence_adapter",
-        "display_name": "Salamandra (MN5) + LoRA",
-        "api_key": "",
-        "api_endpoint": "http://84.88.53.199:9101/v1",
-        "interface": "text"
-    },
-    {
         "model_name": "gemma-3-27b-it",
         "model_api_id": "",
-        "display_name": "Gemma (MN5)",
+        "display_name": "Gemma (TID)",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:10006/v1",
         "interface": "text"
@@ -55,12 +39,20 @@
         "api_endpoint": "http://127.0.0.1:10003/v1",
         "interface": "text"
     },
-    {
+    {  
         "model_name": "Qwen2.5-Audio",
         "model_api_id": "",
         "display_name": "Qwen2.5 (TID)",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:10003/v1",
         "interface": "audio"
+    },
+    {
+        "model_name": "Scientist:latest",
+        "model_api_id": "Scientist:latest",                                                                                                       
+        "display_name": "SDialog",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:1335/v1",
+        "interface": "text"
     }
 ]
