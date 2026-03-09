@@ -42,7 +42,7 @@
     {
         "model_name": "gemma-3-27b-it",
         "model_api_id": "",
-        "display_name": "Gemma (TID)",
+        "display_name": "Gemma (MN5)",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:10006/v1",
         "interface": "text"
