@@ -63,7 +63,7 @@ class BSCInteractor:
             print("Received completion:", completion)
         except Exception as exc:
             logger.exception("Failed generating response!")
-            raise RuntimeError(str(exc))
+            raise RuntimeError(self._format_request_error(exc))
 
         if self.stream:
             return self._generator(completion)
@@ -95,6 +95,26 @@ class BSCInteractor:
 
     def set_params(self, **params):
         self.generate_kwargs.update(params)
+
+    def _format_request_error(self, exc):
+        """Provide actionable error messages for transport/retry failures."""
+        root_exc = exc
+        if isinstance(exc, tenacity.RetryError):
+            last_attempt = getattr(exc, "last_attempt", None)
+            if last_attempt is not None:
+                try:
+                    last_exc = last_attempt.exception()
+                    if last_exc is not None:
+                        root_exc = last_exc
+                except Exception:
+                    pass
+
+        err_name = type(root_exc).__name__
+        err_text = str(root_exc).strip() or repr(root_exc)
+        return (
+            f"LLM request failed for model '{self.model_name}' at '{self.api_endpoint}': "
+            f"{err_name}: {err_text}"
+        )
 
     @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=4, max=10), stop=tenacity.stop_after_attempt(3))
     def _request(self, messages):
@@ -312,9 +332,24 @@ class SalamandraInteractor(BSCInteractor):
     
     
 class WhisperInteractor(BSCInteractor):
+    def __init__(
+        self,
+        api_endpoint,
+        model_name,
+        api_key=None,
+        max_tokens=None,
+        temperature=None,
+        top_p=None,
+        stream=False,
+        transcription_kwargs=None,
+    ):
+        super().__init__(api_endpoint, model_name, api_key, max_tokens, temperature, top_p, stream)
+        self.transcription_kwargs = transcription_kwargs or {}
+
     def __call__(self, documents, history, llm, system_prompt, audio, language=None):
         from io import BytesIO
         from gradio_app.helpers import detect_audio_format, bytes_to_wav
+
         logger.info("WhisperInteractor language=%s", language)
         audio_bytes = bytes(audio)
         audio_format = detect_audio_format(audio_bytes)
@@ -326,5 +361,6 @@ class WhisperInteractor(BSCInteractor):
             file=audio,
             model=self.model_name,
             language=language,
-            )
+            **self.transcription_kwargs,
+        )
         return transcription.text

@@ -8,11 +8,22 @@
         "interface": "text"
     },
     {
-        "model_name": "whisper-1",
-        "model_api_id": "whisper-1",
-        "display_name": "Whisper",
-        "api_key": "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",
-        "api_endpoint": "https://api.openai.com/v1",
+        "model_name": "large-v3-turbo",
+        "model_api_id": "large-v3-turbo",
+        "display_name": "WhisperX (diarize)",
+        "api_key": "local-whisperx",
+        "api_endpoint": "http://127.0.0.1:9100/v1",
+        "interface": "audio",
+        "transcription_params": {
+            "diarize": true
+        }
+    },
+    {
+        "model_name": "whisper-large-v3",
+        "model_api_id": "whisper-large-v3",
+        "display_name": "Whisper (MN5)",
+        "api_key": "local-whisper",
+        "api_endpoint": "http://84.88.53.199:8097/v1",
         "interface": "audio"
     },
     {
@@ -20,7 +31,7 @@
         "model_api_id": "tgi",
         "display_name": "Salamandra (MN5)",
         "api_key": "key",
-        "api_endpoint": "http://127.0.0.1:8082/v1/",
+        "api_endpoint": "http://84.88.53.199:8082/v1",
         "interface": "text"
     },
     {
@@ -62,5 +73,21 @@
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:10003/v1",
         "interface": "audio"
+    },
+    {
+        "model_name": "Mistral-Small-3.1-24B-Instruct-2503",
+        "model_api_id": "Mistral-Small-3.1-24B-Instruct-2503",
+        "display_name": "Mistral Small 3.1 24B (BSC)",
+        "api_key": "",
+        "api_endpoint": "http://84.88.53.199:9102/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "Scientist:latest",
+        "model_api_id": "Scientist:latest",
+        "display_name": "Scientist:latest",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:1335/v1",
+        "interface": "text"
     }
 ]
