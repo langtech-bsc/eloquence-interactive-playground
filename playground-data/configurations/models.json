@@ -70,5 +70,13 @@
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:1335/v1",
         "interface": "text"
+    },
+    {
+        "model_name": "Mistral-Small-3.1-24B-Instruct-2503",
+        "interactor": "apertus",
+        "display_name": "Mistral Small 3.1 24B (BSC)",
+        "api_key": "",
+        "api_endpoint": "http://84.88.53.199:9102/v1",
+        "interface": "text"
     }
 ]

@@ -4,6 +4,7 @@ import os
 import json
 from typing import List
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
 
@@ -600,6 +601,8 @@ def _get_historical_prompts(user: str):
     return gr.Radio(label="Saved Histories", choices=_build_history_choices(logs))
 
 def _get_online_models(available_llms):
+    probe_models = str(os.environ.get("ELOQ_PROBE_MODELS_ON_LOAD", "false")).strip().lower() in {"1", "true", "yes", "on"}
+
     def _build_silent_wav(sample_rate: int = 16000, duration_ms: int = 120) -> bytes:
         import io
         import wave
@@ -622,7 +625,7 @@ def _get_online_models(available_llms):
         return _interactor_name(model_name) == "sdialog"
 
     def _is_model_online(model_name):
-        gr.Info(f"Checking availability of {model_name}")
+        logger.info("Checking availability of %s", model_name)
         interactor = _interactor_name(model_name)
         try:
             if check_llm_interface(model_name, "text", available_llms=llm_handler.available_llms):
@@ -665,17 +668,21 @@ def _get_online_models(available_llms):
                     return True
                 return True
         except Exception as e:
-            logging.error(f"Error checking model {model_name}: {e}")
+            logger.error("Error checking model %s: %s", model_name, e)
             return False
 
         return False
 
     choices = [(llm, llm) for llm in available_llms.keys()]
-    online_choices = [choice for choice in choices if _is_model_online(choice[1])]
+    if probe_models:
+        online_choices = [choice for choice in choices if _is_model_online(choice[1])]
+    else:
+        # Avoid cross-endpoint health probes on page load unless explicitly enabled.
+        online_choices = choices
     # Keep task-specific models out of global/default model lists.
     online_choices = [choice for choice in online_choices if not _is_sdialog_model(choice[1])]
     dynamic_data["online_llms"] = [c[1] for c in online_choices]
-    return gr.Radio(label="Available LLMs", choices=online_choices), [c[1] for c in online_choices]
+    return gr.Radio(label="Available LLMs", choices=online_choices), dynamic_data["online_llms"]
 
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     """Update LLM choices based on task interface."""
