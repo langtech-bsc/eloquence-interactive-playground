@@ -15,6 +15,7 @@ class RequestQueryLLM(BaseModel):
     retriever_address: Optional[str] = "public"
     system_prompt: Optional[str] = None
     language: Optional[str] = None
+    render_doc_links: Optional[bool] = True
 
 
 class RequestBatchQuery(BaseModel):
@@ -27,6 +28,7 @@ class RequestBatchQuery(BaseModel):
     index_name: Optional[str]
     retriever_address: Optional[str] = "public"
     system_prompt: Optional[str] = None
+    render_doc_links: Optional[bool] = True
 
 
 class RequestIngest(BaseModel):
@@ -36,6 +38,7 @@ class RequestIngest(BaseModel):
     percentile: Optional[float] = 0.9
     splitting_strategy: Optional[str] =  "recursive"
     retriever_address: Optional[str] = "public"
+    append: Optional[bool] = False
 
 
 class ResponseQueryLLM(BaseModel):

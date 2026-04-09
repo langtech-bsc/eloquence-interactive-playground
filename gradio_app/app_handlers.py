@@ -35,7 +35,7 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name: str, file_paths: List[str], splitting_strategy: str, retriever_address: str):
+def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name: str, file_paths: List[str], splitting_strategy: str, retriever_address: str, append: bool = False):
     """Handles the document ingestion process."""
     if not file_paths:
         raise gr.Error("You must upload at least one file.")
@@ -44,18 +44,35 @@ def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name
     
     gr.Info("Ingesting documents...")
     retriever = RetrieverClient(endpoint=retriever_address)
-    uploaded_files = [os.path.join(settings.GENERIC_UPLOAD, os.path.basename(fp)) for fp in file_paths]
+    uploaded_files = []
+    for fp in file_paths:
+        src_path = fp.name if hasattr(fp, "name") else str(fp)
+        src_path = src_path.strip()
+        if os.path.isabs(src_path) and os.path.exists(src_path):
+            uploaded_files.append(src_path)
+        else:
+            uploaded_files.append(os.path.join(settings.GENERIC_UPLOAD, os.path.basename(src_path)))
     
-    retriever.create_vs(
-        uploaded_files,
-        chunk_size,
-        percentile,
-        embed_name,
-        index_name,
-        splitting_strategy
-    )
-    
-    shutil.rmtree(settings.GENERIC_UPLOAD, ignore_errors=True)
+    try:
+        retriever.create_vs(
+            uploaded_files,
+            chunk_size,
+            percentile,
+            embed_name,
+            index_name,
+            splitting_strategy,
+            append=append
+        )
+    finally:
+        generic_root = os.path.abspath(settings.GENERIC_UPLOAD)
+        for uploaded_file in uploaded_files:
+            abs_uploaded = os.path.abspath(uploaded_file)
+            in_generic_root = abs_uploaded == generic_root or abs_uploaded.startswith(generic_root + os.sep)
+            if in_generic_root and os.path.isfile(abs_uploaded):
+                try:
+                    os.unlink(abs_uploaded)
+                except OSError:
+                    pass
     gr.Info("Ingestion successful!")
 
 
@@ -113,6 +130,7 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
     # Extract audio data and language if present in kwargs
     audio_data = kwargs.get("audio")
     language = kwargs.get("language")
+    render_doc_links = kwargs.get("render_doc_links", True)
 
     logger.info('Starting LLM stream and document retrieval...')
     stream = task_handler(
@@ -131,7 +149,8 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
 
     for part, documents in stream:
         history[-1][1] += part
-        history[-1][1] = replace_doc_links(history[-1][1])
+        if render_doc_links:
+            history[-1][1] = replace_doc_links(history[-1][1])
         yield history, documents
 
 
@@ -461,6 +480,8 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
         audio_mode = task_config.get("audio_mode")
         if audio_mode == "transcription":
             input_text = "Transcribe the audio."
+        elif audio_mode == "diarization":
+            input_text = "Diarize the audio."
         elif audio_mode == "qa":
             if audio_qa_mode == "whisper_llm":
                 transcription = _collect_llm_response(
@@ -546,7 +567,7 @@ def _get_task_configs():
         content = _load_json(filepath, default={})
         if "name" in content:
             configs.append((content["name"], json.dumps(content)))
-    preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "Audio QA", "Transcription"]
+    preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "Audio QA", "Transcription", "Diarization"]
     order_index = {name: idx for idx, name in enumerate(preferred_order)}
     configs.sort(key=lambda item: order_index.get(item[0], len(preferred_order)))
     return gr.Radio(label="Task configuration", choices=configs), configs
@@ -593,18 +614,16 @@ def _get_online_models(available_llms):
             wav_file.writeframes(pcm_silence)
         return buf.getvalue()
 
-    def _is_sdialog_model(model_name: str) -> bool:
+    def _interactor_name(model_name: str) -> str:
         entry = available_llms.get(model_name, {})
-        identifiers = [
-            model_name,
-            entry.get("display_name", ""),
-            entry.get("model_name", ""),
-            entry.get("model_api_id", ""),
-        ]
-        return any(isinstance(value, str) and value.lower() == "scientist:latest" for value in identifiers)
+        return str(entry.get("interactor", "")).strip().lower()
+
+    def _is_sdialog_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "sdialog"
 
     def _is_model_online(model_name):
         gr.Info(f"Checking availability of {model_name}")
+        interactor = _interactor_name(model_name)
         try:
             if check_llm_interface(model_name, "text", available_llms=llm_handler.available_llms):
                 task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data.get("retriever_instance"))
@@ -618,10 +637,19 @@ def _get_online_models(available_llms):
                                                     "index_name",
                                                     max_tokens=2):
                     return True
-            else:
-                task_handler = get_task_handler(settings.BASIC_AUDIO_CONFIG, llm_handler, dynamic_data.get("retriever_instance"))
+                return True
+            elif check_llm_interface(model_name, "audio", available_llms=llm_handler.available_llms):
+                # WhisperX supports diarization audio mode, so probe with diarization if possible.
+                audio_mode = "diarization" if interactor == "whisperx" else "transcription"
+                task_config = {
+                    "interface": "audio",
+                    "RAG": False,
+                    "service": "local",
+                    "audio_mode": audio_mode,
+                }
+                task_handler = get_task_handler(task_config, llm_handler, dynamic_data.get("retriever_instance"))
                 sample_audio = _build_silent_wav()
-                query = "Describe the audio."
+                query = "Diarize the audio." if audio_mode == "diarization" else "Describe the audio."
                 history = [[query, ""]]
                 for part, documents in task_handler(
                     model_name,
@@ -635,6 +663,7 @@ def _get_online_models(available_llms):
                     language="en",
                 ):
                     return True
+                return True
         except Exception as e:
             logging.error(f"Error checking model {model_name}: {e}")
             return False
@@ -655,24 +684,18 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
     interface = "audio" if task_config.get("interface") == "audio" else "text"
     audio_mode = task_config.get("audio_mode")
 
-    def _is_whisper_model(model_name: str) -> bool:
+    def _interactor_name(model_name: str) -> str:
         entry = llm_handler.available_llms.get(model_name, {})
-        haystack = " ".join([
-            model_name,
-            entry.get("model_name", ""),
-            entry.get("model_api_id", ""),
-        ]).lower()
-        return "whisper" in haystack
+        return str(entry.get("interactor", "")).strip().lower()
+
+    def _is_whisper_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "whisper"
+
+    def _is_whisperx_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "whisperx"
 
     def _is_sdialog_model(model_name: str) -> bool:
-        entry = llm_handler.available_llms.get(model_name, {})
-        identifiers = [
-            model_name,
-            entry.get("display_name", ""),
-            entry.get("model_name", ""),
-            entry.get("model_api_id", ""),
-        ]
-        return any(isinstance(value, str) and value.lower() == "scientist:latest" for value in identifiers)
+        return _interactor_name(model_name) == "sdialog"
 
     online_llms = dynamic_data.get("online_llms", [])
     if online_llms:
@@ -702,12 +725,18 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
 
     if interface == "audio" and audio_mode:
         if audio_mode == "transcription":
-            choices = [choice for choice in choices if _is_whisper_model(choice[1])]
+            choices = [choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])]
+        elif audio_mode == "diarization":
+            choices = [choice for choice in choices if _is_whisperx_model(choice[1])]
         elif audio_mode == "qa":
             if audio_qa_mode == "whisper_llm":
-                choices = [choice for choice in choices if _is_whisper_model(choice[1])]
+                choices = [choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])]
             else:
-                choices = [choice for choice in choices if not _is_whisper_model(choice[1])]
+                choices = [
+                    choice
+                    for choice in choices
+                    if not _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])
+                ]
 
     return gr.update(choices=choices, value=None, visible=True)
 
@@ -715,6 +744,10 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
     task_config = json.loads(task_config_str) if task_config_str else {}
     interface = "audio" if task_config.get("interface") == "audio" else "text"
     audio_mode = task_config.get("audio_mode")
+
+    def _interactor_name(model_name: str) -> str:
+        entry = llm_handler.available_llms.get(model_name, {})
+        return str(entry.get("interactor", "")).strip().lower()
 
     if not (interface == "audio" and audio_mode == "qa" and audio_qa_mode == "whisper_llm"):
         return gr.update(visible=False, value=None)
@@ -735,14 +768,7 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
 
     filtered_choices = []
     for label, value in choices:
-        entry = llm_handler.available_llms.get(value, {})
-        identifiers = [
-            value,
-            entry.get("display_name", ""),
-            entry.get("model_name", ""),
-            entry.get("model_api_id", ""),
-        ]
-        is_sdialog_model = any(isinstance(name, str) and name.lower() == "scientist:latest" for name in identifiers)
+        is_sdialog_model = _interactor_name(value) == "sdialog"
         if not is_sdialog_model:
             filtered_choices.append((label, value))
 

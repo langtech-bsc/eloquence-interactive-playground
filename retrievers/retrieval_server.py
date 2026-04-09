@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import List
 from retrievers.retrievers import LanceDBRetriever
@@ -21,6 +21,7 @@ class SearchResult(BaseModel):
 
 @app.get("/list_indices")
 async def list_indices():
+    retriever._load_index_config()
     return {"index_names": list(retriever.index_config.keys())}
 
 
@@ -38,7 +39,8 @@ async def create_vs(
     percentile: float = Form(...),
     embed_name: str = Form(...),
     table_name: str = Form(...),
-    splitting_strategy: str = Form(...)
+    splitting_strategy: str = Form(...),
+    append: bool = Form(False)
 ):
     uploaded_files = []
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -47,13 +49,27 @@ async def create_vs(
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         uploaded_files.append(file_location)
-    retriever.create(uploaded_files, chunk_size, percentile, embed_name, table_name, splitting_strategy)
+    try:
+        retriever.create(uploaded_files, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=append)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return "Success"
 
 
 @app.post("/add")
 async def add_to_vs(text: str, metadata: str, index_name: str):
     retriever.add_single_chunk(text, metadata, index_name)
+    return "Success"
+
+
+@app.delete("/index/{index_name}")
+async def delete_index(index_name: str):
+    try:
+        retriever.delete_index(index_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return "Success"
 
 

@@ -1,0 +1,7 @@
+{
+    "name": "Diarization",
+    "RAG": false,
+    "interface": "audio",
+    "service": "local",
+    "audio_mode": "diarization"
+}

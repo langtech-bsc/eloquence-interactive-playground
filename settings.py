@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     METADATA: str = "metadata"
     UPLOAD_DIR: str = "/tmp/uploads"
     TOP_K_RERANK: int = 5
-    SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt"]
+    SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt", "jsonl"]
     RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7997"
     BASIC_CONFIG: dict = {"interface": "text", "RAG": False, "service": "local"}
     BASIC_AUDIO_CONFIG: dict = {"interface": "audio", "RAG": False, "service": "local"}
@@ -60,7 +60,8 @@ class Settings(BaseSettings):
         "Salamandra (MN5)": 8196,
         "Salamandra (TID)": 8196,
         "Salamandra (HF)": 8196,
-        "Gemma (TID)": 8192,
+        "Gemma 3 (TID)": 8192,
+        "Gemma 4 (TID)": 8192,
         "Apertus (TID)": 65536,
         "sentence-transformers/all-MiniLM-L6-v2": 128,
         "thenlper/gte-large": 512,
@@ -341,6 +342,11 @@ async () => {
         return String(modelName).toLowerCase().includes("whisper");
     };
 
+    const isWhisperXSelected = (modelName) => {
+        if (!modelName) return false;
+        return String(modelName).toLowerCase().includes("whisperx");
+    };
+
     // Auto-scroll the chatbot window
     globalThis.Scrolldown = function() {
         const targetNode = document.querySelector('[aria-label="chatbot conversation"]');
@@ -378,8 +384,19 @@ async () => {
                 status.innerText = "Please select a Whisper model before recording.";
                 return;
             }
-            if (!isWhisperSelected(selectedAudioModel)) {
+            if (!isWhisperSelected(selectedAudioModel) || isWhisperXSelected(selectedAudioModel)) {
                 status.innerText = "Selected model is not Whisper. Please pick a Whisper model before recording.";
+                return;
+            }
+        }
+
+        if (audioMode === "diarization") {
+            if (!selectedAudioModel) {
+                status.innerText = "Please select the WhisperX model before recording.";
+                return;
+            }
+            if (!isWhisperXSelected(selectedAudioModel)) {
+                status.innerText = "Selected model is not WhisperX. Please pick WhisperX before recording.";
                 return;
             }
         }
@@ -435,7 +452,7 @@ async () => {
                 }
                 const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
                 recordedBlob = blob;
-                status.innerText = "Recording stopped. Click Submit to transcribe.";
+                status.innerText = "Recording stopped. Click Submit to process the audio.";
                 if (audioEl) {
                     audioEl.src = URL.createObjectURL(blob);
                 }

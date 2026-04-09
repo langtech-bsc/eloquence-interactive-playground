@@ -1,55 +1,55 @@
 [
     {
         "model_name": "salamandra-7b-instruct",
-        "model_api_id": "tgi",
+        "interactor": "salamandra",
         "display_name": "Salamandra (HF)",
         "api_key": "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",
         "api_endpoint": "https://gg1brnpmx53zkhrg.eu-west-1.aws.endpoints.huggingface.cloud/v1",
         "interface": "text"
     },
     {
-        "model_name": "whisper-1",
-        "model_api_id": "whisper-1",
+        "model_name": "whisper-large-v3",
+        "interactor": "whisper",
         "display_name": "Whisper",
-        "api_key": "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",
-        "api_endpoint": "https://api.openai.com/v1",
+        "api_key": "local-whisper",
+        "api_endpoint": "http://localhost:9080/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "large-v3",
+        "interactor": "whisperx",
+        "display_name": "WhisperX",
+        "api_key": "",
+        "api_endpoint": "http://localhost:9081/v1",
         "interface": "audio"
     },
     {
         "model_name": "salamandra-7b-instruct",
-        "model_api_id": "tgi",
-        "display_name": "Salamandra (MN5)",
-        "api_key": "key",
-        "api_endpoint": "http://127.0.0.1:8082/v1/",
-        "interface": "text"
-    },
-    {
-        "model_name": "salamandra-7b-instruct",
-        "model_api_id": "tgi",
-        "display_name": "Salamandra (MN5) [9101]",
+        "interactor": "salamandra",
+        "display_name": "Salamandra (TID)",
         "api_key": "",
-        "api_endpoint": "http://84.88.53.199:9101/v1",
-        "interface": "text"
-    },
-    {
-        "model_name": "eloquence_adapter",
-        "model_api_id": "eloquence_adapter",
-        "display_name": "Salamandra (MN5) + LoRA",
-        "api_key": "",
-        "api_endpoint": "http://84.88.53.199:9101/v1",
+        "api_endpoint": "http://127.0.0.1:10005/v1/",
         "interface": "text"
     },
     {
         "model_name": "gemma-3-27b-it",
-        "model_api_id": "",
-        "display_name": "Gemma (TID)",
+        "interactor": "gemma",
+        "display_name": "Gemma 3 (TID)",
         "api_key": "",
-        "api_endpoint": "http://127.0.0.1:10006/v1",
+        "api_endpoint": "http://127.0.0.1:10007/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "gemma-4-31B-it",
+        "interactor": "gemma",
+        "display_name": "Gemma 4 (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10002/v1",
         "interface": "text"
     },
     {
         "model_name": "Apertus-8B-Instruct-2509",
-        "model_api_id": "",
+        "interactor": "apertus",
         "display_name": "Apertus (TID)",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:10003/v1",
@@ -57,10 +57,18 @@
     },
     {
         "model_name": "Qwen2.5-Audio",
-        "model_api_id": "",
+        "interactor": "qwen",
         "display_name": "Qwen2.5 (TID)",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:10003/v1",
         "interface": "audio"
+    },
+    {
+        "model_name": "Scientist:latest",
+        "interactor": "sdialog",
+        "display_name": "Scientist:latest",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:1335/v1",
+        "interface": "text"
     }
 ]
