@@ -1,5 +1,6 @@
 import logging
 import time
+import re
 
 import openai
 import tenacity
@@ -79,7 +80,28 @@ class BSCInteractor:
             logger.info(
                 f"Received response without token usage metadata. Time: {t2 - t1:3.1f} seconds"
             )
-        return completion.choices[0].message.content
+
+        answer = self._extract_answer_text(completion)
+        finish_reason = getattr(completion.choices[0], "finish_reason", None) if completion.choices else None
+
+        if not answer and finish_reason == "length":
+            current_max = self.generate_kwargs.get("max_tokens")
+            retry_max_tokens = 256 if not isinstance(current_max, int) or current_max < 256 else current_max * 2
+            logger.warning(
+                "Empty assistant content with finish_reason=length for %s. Retrying once with max_tokens=%s.",
+                self.model_name,
+                retry_max_tokens,
+            )
+            completion = self._request(messages, override_kwargs={"max_tokens": retry_max_tokens})
+            answer = self._extract_answer_text(completion)
+
+        if answer:
+            return answer
+
+        raise RuntimeError(
+            "Model returned empty assistant content. "
+            "If this is Gemma 4, increase max_tokens (for example >=256) or disable reasoning/thinking on the endpoint."
+        )
 
     @staticmethod
     def get_stream_text(stream_part):
@@ -89,6 +111,34 @@ class BSCInteractor:
     def _generator(completion):
         for part in completion:
             yield BSCInteractor.get_stream_text(part)
+
+    @staticmethod
+    def _extract_content_text(content):
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        text_parts.append(text)
+            return "".join(text_parts)
+        return ""
+
+    @classmethod
+    def _extract_answer_text(cls, completion):
+        if not getattr(completion, "choices", None):
+            return ""
+        message = getattr(completion.choices[0], "message", None)
+        if message is None:
+            return ""
+
+        if isinstance(message, dict):
+            return cls._extract_content_text(message.get("content"))
+
+        content = getattr(message, "content", "")
+        return cls._extract_content_text(content)
 
     def count_tokens(self, messages):
         return apx_num_tokens_from_messages(messages, self.model_name)
@@ -117,15 +167,18 @@ class BSCInteractor:
         )
 
     @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=4, max=10), stop=tenacity.stop_after_attempt(3))
-    def _request(self, messages):
+    def _request(self, messages, override_kwargs=None):
         logger.info(self.api_endpoint + " " + self.model_name)
         logger.info(len(messages))
         logger.info(str([m['role'] for m in messages]))
+        request_kwargs = dict(self.generate_kwargs)
+        if override_kwargs:
+            request_kwargs.update(override_kwargs)
         completion = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
             stream=self.stream,
-            **self.generate_kwargs
+            **request_kwargs
         )
 
         return completion
@@ -364,3 +417,105 @@ class WhisperInteractor(BSCInteractor):
             **self.transcription_kwargs,
         )
         return transcription.text
+
+
+class WhisperXInteractor:
+    def __init__(self, api_endpoint, model_name, api_key=None, **kwargs):
+        self.model_name = model_name
+        self.api_endpoint = api_endpoint.rstrip("/")
+        self.api_key = api_key
+        self.generate_kwargs = {"timeout": 600, "diarize": True} # default values for whisperx
+        self.generate_kwargs.update(kwargs) # override defaults or add new params
+        #self.base_url = self._normalize_base_url(self.api_endpoint)
+        self.base_url = self.api_endpoint
+        # Builds OpenAI client with the provided API endpoint and key
+        self.client = openai.OpenAI(
+            base_url=self.base_url,
+            api_key=api_key,
+            max_retries=0,
+        )
+        logger.info(f"Creating WhisperXInteractor with endpoint {self.base_url} and model_name {self.model_name}")
+
+    def set_params(self, **params):
+        self.generate_kwargs.update(params)
+
+    @staticmethod
+    def _speaker_label(speaker_code): # Normalizes speaker identifiers into Speaker N format
+        if speaker_code is None:
+            return None
+        if isinstance(speaker_code, (int, float)) and not isinstance(speaker_code, bool):
+            return f"Speaker {int(speaker_code)}"
+        speaker_str = str(speaker_code).strip()
+        if not speaker_str:
+            return None
+        match = re.search(r"(\d+)$", speaker_str)
+        if match:
+            return f"Speaker {int(match.group(1))}"
+        return f"Speaker {speaker_str}"
+
+    # Formats the transcription output into a readable string format
+    def _format_transcription(self, transcription):
+        payload = transcription.model_dump() if hasattr(transcription, "model_dump") else transcription
+        if not isinstance(payload, dict):
+            text_out = str(payload).strip()
+            return text_out or "No speech segments detected in the provided audio."
+
+        lines = []
+        for segment in payload.get("segments") or []:
+            if not isinstance(segment, dict) and hasattr(segment, "model_dump"):
+                segment = segment.model_dump()
+            if not isinstance(segment, dict):
+                continue
+
+            text = str(segment.get("text", "")).strip()
+            if not text:
+                continue
+
+            speaker = self._speaker_label(segment.get("speaker"))
+            lines.append(f"{speaker}: {text}" if speaker else text)
+
+        if lines:
+            return "\n".join(lines)
+
+        text_out = str(payload.get("text", "")).strip()
+        return text_out or "No speech segments detected in the provided audio."
+
+    def __call__(self, documents, history, llm, system_prompt, audio, language=None):
+        from io import BytesIO
+        from gradio_app.helpers import detect_audio_format, bytes_to_wav
+
+        if audio is None:
+            raise ValueError("WhisperX requires an audio input.")
+
+        # Convert audio to WAV if necessary, as WhisperX expects WAV input
+        audio_bytes = bytes(audio)
+        audio_format = detect_audio_format(audio_bytes)
+        if audio_format != "wav":
+            audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+            audio_format = "wav"
+
+        # Prepare audio file for transcription request
+        audio_file = BytesIO(audio_bytes)
+        audio_file.name = f"input.{audio_format}" # important for multipart upload metadata
+
+        timeout = self.generate_kwargs.get("timeout")
+        diarize = self.generate_kwargs.get("diarize") # True
+
+        extra_body = {"diarize": diarize}
+        # Include additional parameters for the transcription request if provided
+        for key in ("min_speakers", "max_speakers", "pretty"):
+            value = self.generate_kwargs.get(key)
+            if value is not None:
+                extra_body[key] = value
+
+        response = self.client.audio.transcriptions.create(
+            file=audio_file,
+            model=self.model_name,
+            language=language,
+            response_format="verbose_json",
+            extra_body=extra_body,
+            timeout=timeout,
+        )
+
+        formatted = self._format_transcription(response)
+        return formatted

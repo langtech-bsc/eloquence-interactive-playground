@@ -26,7 +26,7 @@ def get_doc_loader(file_path):
         return CSVLoader(file_path, csv_args={"delimiter": "\t"})
     elif extension == "html":
         return BSHTMLLoader(file_path)
-    elif extension in ["md", "txt"]:
+    elif extension in ["md", "txt", "jsonl"]:
         return TextLoader(file_path)
     else:
         raise NotImplementedError(f"Unknown extension {extension}")
@@ -74,16 +74,30 @@ class LanceDBRetriever:
 
         tbl.add(df)
 
-    def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy):
+    def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=False):
         db = lancedb.connect(settings.LANCEDB_DIRECTORY)
         batch_size = 128
 
-        schema = pa.schema([
-            pa.field(settings.VECTOR_COLUMN_NAME, pa.list_(pa.float32(), settings.EMBEDDING_SIZES[embed_name])),
-            pa.field(settings.TEXT_COLUMN_NAME, pa.string()),
-            pa.field(settings.METADATA, pa.string()),
-        ])
-        tbl = db.create_table(table_name, schema=schema, mode="overwrite")
+        existing_table_names = [
+            t.name if hasattr(t, "name") else str(t)
+            for t in db.table_names()
+        ]
+
+        if append and table_name in existing_table_names:
+            # Table exists, open it for appending
+            tbl = db.open_table(table_name)
+            # Ensure embedder matches
+            if table_name in self.index_config and self.index_config[table_name] != embed_name:
+                raise ValueError(f"Embedder mismatch for existing index {table_name}")
+        else:
+            # Create new or overwrite
+            schema = pa.schema([
+                pa.field(settings.VECTOR_COLUMN_NAME, pa.list_(pa.float32(), settings.EMBEDDING_SIZES[embed_name])),
+                pa.field(settings.TEXT_COLUMN_NAME, pa.string()),
+                pa.field(settings.METADATA, pa.string()),
+            ])
+            mode = "create" if append else "overwrite"
+            tbl = db.create_table(table_name, schema=schema, mode=mode)
         embedder = EmbedderFactory.get_embedder(embed_name)
 
         if splitting_strategy == "simple":
@@ -123,6 +137,26 @@ class LanceDBRetriever:
         embedder = self._get_embedder(index_name)
         table = self.db.open_table(index_name)
         self._add_batch_to_table([text], [metadata], embedder, table)
+
+    def delete_index(self, index_name: str):
+        self._load_index_config()
+
+        table_exists = True
+        try:
+            self.db.open_table(index_name)
+        except Exception:
+            table_exists = False
+
+        index_in_config = index_name in self.index_config
+        if not table_exists and not index_in_config:
+            raise ValueError(f"Index '{index_name}' does not exist.")
+
+        if table_exists:
+            self.db.drop_table(index_name)
+
+        if index_in_config:
+            del self.index_config[index_name]
+            self._save_index_config()
 
     def _load_index_config(self):
         self.index_config = {}

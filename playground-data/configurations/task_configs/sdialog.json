@@ -1,0 +1,6 @@
+{
+    "name": "SDialog",
+    "RAG": false,
+    "interface": "text",
+    "service": "local"
+}

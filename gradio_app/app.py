@@ -169,13 +169,20 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
     audio_data = await audio_file.read() if audio_file else None
 
     if task_config.get("interface") == "audio" and audio_data:
-        query = "Describe the audio."
+        audio_mode = task_config.get("audio_mode")
+        if audio_mode == "transcription":
+            query = "Transcribe the audio."
+        elif audio_mode == "diarization":
+            query = "Diarize the audio."
+        else:
+            query = "Describe the audio."
     
     stream = _process_llm_request(
         kwargs["llm_name"], kwargs.get("system_prompt"), history, query,
         kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
         temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
-        max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language")
+        max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language"),
+        render_doc_links=kwargs.get("render_doc_links", True)
     )
     
     final_text = ""
@@ -249,9 +256,11 @@ async def batch_query_endpoint(body: str = Form(...), data_file: UploadFile = Fi
 async def ingest_endpoint(content_file: UploadFile, body: str = Form(...)):
     """Handles document ingestion into a specified vector store."""
     request = TypeAdapter(RequestIngest).validate_json(body)
+    temp_file_path = None
     try:
         # Use a temporary file to safely handle the upload
-        with tempfile.NamedTemporaryFile(delete=False, suffix=content_file.filename) as tmp:
+        file_suffix = os.path.splitext(content_file.filename or "")[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix) as tmp:
             shutil.copyfileobj(content_file.file, tmp.file)
             temp_file_path = tmp.name
         # Call the same ingestion logic used by the UI
@@ -260,18 +269,21 @@ async def ingest_endpoint(content_file: UploadFile, body: str = Form(...)):
             chunk_size=request.chunk_size,
             percentile=request.percentile,
             embed_name=request.embed_name,
-            file_paths=[temp_file_path], # Pass base name
+            file_paths=[temp_file_path],
             splitting_strategy=request.splitting_strategy,
-            retriever_address=request.retriever_address
+            retriever_address=request.retriever_address,
+            append=request.append
         )
-        try:
-            os.unlink(temp_file_path)
-        except FileNotFoundError:
-            pass
         return ResponseIngest(status="success", msg="Document ingested successfully.")
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
         return ResponseIngest(status="error", msg=str(e))
+    finally:
+        if temp_file_path:
+            try:
+                os.unlink(temp_file_path)
+            except FileNotFoundError:
+                pass
 
 
 @app.get("/list_vs", response_model=ResponseList)
@@ -282,6 +294,20 @@ async def list_vector_stores(retriever_address: str = "public"):
     retriever = RetrieverClient(endpoint=retriever_address)
     stores = retriever.list_vs()
     return ResponseList(available=stores)
+
+
+@app.delete("/delete_vs", response_model=ResponseIngest)
+async def delete_vector_store(index_name: str, retriever_address: str = "public"):
+    """Deletes a specific Vector Store (index) by name."""
+    if retriever_address == "public":
+        retriever_address = settings.RETRIEVER_ENDPOINT
+    retriever = RetrieverClient(endpoint=retriever_address)
+    try:
+        retriever.delete_vs(index_name=index_name)
+        return ResponseIngest(status="success", msg=f"Index '{index_name}' deleted successfully.")
+    except Exception as exc:
+        logger.error(f"Delete failed for index '{index_name}': {exc}")
+        return ResponseIngest(status="error", msg=str(exc))
 
 
 @app.get("/list_llms", response_model=ResponseList)

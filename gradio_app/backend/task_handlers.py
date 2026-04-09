@@ -21,23 +21,41 @@ class LocalTaskHandler:
             audio_mode = self.task_config.get("audio_mode")
             if audio_mode:
                 entry = self.llm_handler.available_llms.get(llm_name, {})
-                haystack = " ".join([llm_name, entry.get("model_name", ""), entry.get("model_api_id", "")]).lower()
-                is_whisper = "whisper" in haystack
+                interactor = str(entry.get("interactor", "")).strip().lower()
+
+                is_whisper = interactor == "whisper"
+                is_whisperx = interactor == "whisperx"
                 if audio_mode == "transcription" and not is_whisper:
                     raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper model.")
-                if audio_mode == "qa" and is_whisper:
-                    raise ValueError(f"Task {self.task_config.get('name', 'Audio QA')} does not support Whisper.")
+                if audio_mode == "transcription" and is_whisperx:
+                    raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper model, not WhisperX.")
+                if audio_mode == "diarization" and not is_whisperx:
+                    raise ValueError(f"Task {self.task_config.get('name', 'Diarization')} requires a WhisperX model.")
+                if audio_mode == "qa" and (is_whisper or is_whisperx):
+                    raise ValueError(f"Task {self.task_config.get('name', 'Audio QA')} does not support Whisper or WhisperX.")
+                if audio_mode == "diarization":
+                    params["diarize"] = True
         documents = []
         if self.task_config["RAG"]:
             documents = self.retriever.search(index_name, query, docs_k)
-        for part in self.llm_handler(
+        llm_response = self.llm_handler(
             llm_name,
             system_prompt,
             history,
             documents,
             task_name=self.task_config.get("name"),
             **params,
-        ):
+        )
+
+        if llm_response is None:
+            yield "", documents
+            return
+
+        if isinstance(llm_response, str):
+            yield llm_response, documents
+            return
+
+        for part in llm_response:
             yield part, documents
 
 
