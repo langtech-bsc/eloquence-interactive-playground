@@ -601,7 +601,7 @@ def _get_historical_prompts(user: str):
     return gr.Radio(label="Saved Histories", choices=_build_history_choices(logs))
 
 def _get_online_models(available_llms):
-    probe_models = str(os.environ.get("ELOQ_PROBE_MODELS_ON_LOAD", "false")).strip().lower() in {"1", "true", "yes", "on"}
+    probe_models = str(os.environ.get("ELOQ_PROBE_MODELS_ON_LOAD", "true")).strip().lower() in {"1", "true", "yes", "on"}
 
     def _build_silent_wav(sample_rate: int = 16000, duration_ms: int = 120) -> bytes:
         import io
@@ -675,13 +675,16 @@ def _get_online_models(available_llms):
 
     choices = [(llm, llm) for llm in available_llms.keys()]
     if probe_models:
-        online_choices = [choice for choice in choices if _is_model_online(choice[1])]
+        probed_online_choices = [choice for choice in choices if _is_model_online(choice[1])]
     else:
         # Avoid cross-endpoint health probes on page load unless explicitly enabled.
-        online_choices = choices
+        probed_online_choices = choices
+
+    # Preserve all online models (including task-specific ones) for task-level filtering.
+    dynamic_data["online_llms"] = [c[1] for c in probed_online_choices]
+
     # Keep task-specific models out of global/default model lists.
-    online_choices = [choice for choice in online_choices if not _is_sdialog_model(choice[1])]
-    dynamic_data["online_llms"] = [c[1] for c in online_choices]
+    online_choices = [choice for choice in probed_online_choices if not _is_sdialog_model(choice[1])]
     return gr.Radio(label="Available LLMs", choices=online_choices), dynamic_data["online_llms"]
 
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
@@ -720,13 +723,6 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
 
     if task_name == "SDialog":
         choices = [choice for choice in choices if _is_sdialog_model(choice[1])]
-        # Fallback when online probing does not include task-specific models.
-        if not choices:
-            choices = [
-                (m["display_name"], m["display_name"])
-                for m in llm_handler.available_llms.values()
-                if m.get("interface") == interface and _is_sdialog_model(m["display_name"])
-            ]
     else:
         choices = [choice for choice in choices if not _is_sdialog_model(choice[1])]
 
