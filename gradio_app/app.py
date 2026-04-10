@@ -424,7 +424,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
 
             # RAG and settings column
             with gr.Column(scale=1):
-                with gr.Accordion("Task & Model Selection", open=False):
+                with gr.Accordion("Task & Model Selection", open=True):
                     task_config = gr.Radio(label="Task configuration", elem_id="task_config")
                     audio_qa_mode = gr.Radio(
                         label="Audio QA Mode",

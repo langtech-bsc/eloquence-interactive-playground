@@ -245,11 +245,15 @@ class Settings(BaseSettings):
         text: black;
     }
     .gallery button {
-        background: #f27618;
+        background: #f3f4f6 !important;
+        color: #6b7280 !important;
+        border: 1px solid #e5e7eb !important;
         border-radius: 6px;
     }
     .gallery button:hover {
-        background: #d25610;
+        background: #e5e7eb !important;
+        color: #4b5563 !important;
+        border: 1px solid #d1d5db !important;
         border-radius: 6px;
     }
     input[type=number] {
@@ -257,6 +261,18 @@ class Settings(BaseSettings):
     }
     div.svelte-sa48pu>.form>* {
         min-width: 70px;
+    }
+    #chatbot .message,
+    #chatbot .message-wrap .message {
+        border-radius: 22px !important;
+    }
+    #chatbot .message.user,
+    #chatbot .message-wrap.user .message {
+        border-bottom-right-radius: 8px !important;
+    }
+    #chatbot .message.bot,
+    #chatbot .message-wrap.bot .message {
+        border-bottom-left-radius: 8px !important;
     }
     .svelte-1mhtq7j {
         background: #f2d518;
@@ -304,9 +320,9 @@ class Settings(BaseSettings):
     }
     #clear_btn,
     #clear_btn button {
-        background: #e5e7eb !important;
-        color: #374151 !important;
-        border: 1px solid #d1d5db !important;
+        background: #f27618 !important;
+        color: #ffffff !important;
+        border: 1px solid #d25610 !important;
         min-height: 44px;
         box-shadow: none !important;
     }
@@ -314,8 +330,9 @@ class Settings(BaseSettings):
     #clear_btn button:hover,
     #clear_btn:focus-visible,
     #clear_btn button:focus-visible {
-        background: #d1d5db !important;
-        color: #1f2937 !important;
+        background: #d25610 !important;
+        color: #ffffff !important;
+        border: 1px solid #b94c0e !important;
     }
     @media (max-width: 1366px) {
         #input_controls_row {

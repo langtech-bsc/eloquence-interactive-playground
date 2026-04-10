@@ -571,7 +571,14 @@ def _get_task_configs():
     preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "Audio QA", "Transcription", "Diarization"]
     order_index = {name: idx for idx, name in enumerate(preferred_order)}
     configs.sort(key=lambda item: order_index.get(item[0], len(preferred_order)))
-    return gr.Radio(label="Task configuration", choices=configs), configs
+    default_value = None
+    for label, value in configs:
+        if label == "Basic LLM":
+            default_value = value
+            break
+    if default_value is None and configs:
+        default_value = configs[0][1]
+    return gr.Radio(label="Task configuration", choices=configs, value=default_value), configs
 
 def _get_retrievers(user: str):
     with open(settings.RETRIEVER_CONFIG_PATH) as f:
@@ -685,7 +692,8 @@ def _get_online_models(available_llms):
 
     # Keep task-specific models out of global/default model lists.
     online_choices = [choice for choice in probed_online_choices if not _is_sdialog_model(choice[1])]
-    return gr.Radio(label="Available LLMs", choices=online_choices), dynamic_data["online_llms"]
+    default_model = online_choices[0][1] if online_choices else None
+    return gr.Radio(label="Available LLMs", choices=online_choices, value=default_model), dynamic_data["online_llms"]
 
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     """Update LLM choices based on task interface."""
