@@ -423,7 +423,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
 
             # RAG and settings column
             with gr.Column(scale=1):
-                with gr.Accordion("Settings & Configuration", open=False):
+                with gr.Accordion("Task & Model Selection", open=False):
                     task_config = gr.Radio(label="Task configuration", elem_id="task_config")
                     audio_qa_mode = gr.Radio(
                         label="Audio QA Mode",
@@ -435,8 +435,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     text_llm_name = gr.Radio(label="Text LLM", visible=False, elem_id="text_llm_name")
                     retrievers_radio = gr.Radio(label="Vector Store", visible=False)
                     index_name = gr.Radio(label="Index name", visible=False)
+
+                with gr.Accordion("Prompt Settings", open=False):
                     system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
-                    
+
                     with gr.Row():
                         load_prompt_btn = gr.Button("Load System Prompt")
                         save_prompt_btn = gr.Button("Save System Prompt")
