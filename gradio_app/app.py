@@ -516,6 +516,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         with gr.Row():
             feedback_df = gr.Dataframe()
 
+    gr.HTML(
+        '<div id="custom_project_footer">Interactive Playground UI developed in <a href="https://eloquenceai.eu/" target="_blank" rel="noopener noreferrer">EU Eloquence project</a></div>'
+    )
+
     demo.load(
         get_dynamic_components,
         [],

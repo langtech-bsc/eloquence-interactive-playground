@@ -374,6 +374,25 @@ class Settings(BaseSettings):
         border: 1px solid #e2e2e2;
         font-family: "Lucida Console", "Courier New", monospace;
     }
+    .gradio-container footer {
+        display: none !important;
+    }
+    #custom_project_footer {
+        margin-top: 12px;
+        padding: 10px 12px;
+        text-align: center;
+        font-size: 14px;
+        color: #4b5563;
+        border-top: 1px solid #e5e7eb;
+    }
+    #custom_project_footer a {
+        color: #018f69;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    #custom_project_footer a:hover {
+        text-decoration: underline;
+    }
     """
     JS_CODE: str = """
 async () => {
