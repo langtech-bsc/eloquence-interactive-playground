@@ -285,9 +285,73 @@ class Settings(BaseSettings):
     }
     #input_controls_row {
         column-gap: 12px;
+        position: sticky;
+        bottom: 0;
+        z-index: 20;
+        background: #ffffff;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        border-top: 1px solid #e5e7eb;
     }
     #submit_clear_row {
         gap: 12px;
+    }
+    #submit_btn,
+    #submit_btn button {
+        font-weight: 700;
+        min-height: 44px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    }
+    #clear_btn,
+    #clear_btn button {
+        background: #e5e7eb !important;
+        color: #374151 !important;
+        border: 1px solid #d1d5db !important;
+        min-height: 44px;
+        box-shadow: none !important;
+    }
+    #clear_btn:hover,
+    #clear_btn button:hover,
+    #clear_btn:focus-visible,
+    #clear_btn button:focus-visible {
+        background: #d1d5db !important;
+        color: #1f2937 !important;
+    }
+    @media (max-width: 1366px) {
+        #input_controls_row {
+            padding-top: 6px;
+            padding-bottom: 6px;
+        }
+        #submit_clear_row {
+            gap: 8px;
+        }
+        #submit_btn,
+        #submit_btn button,
+        #clear_btn,
+        #clear_btn button {
+            min-height: 40px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+        }
+    }
+    @media (max-width: 1100px) {
+        #input_controls_row {
+            column-gap: 8px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+        }
+        #submit_clear_row {
+            gap: 6px;
+        }
+        #submit_btn,
+        #submit_btn button,
+        #clear_btn,
+        #clear_btn button {
+            min-height: 38px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            font-size: 14px;
+        }
     }
     .audio-record-buttons button {
         width: 100%;

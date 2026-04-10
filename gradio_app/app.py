@@ -383,6 +383,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                             scale=3,
                             show_label=False,
                             container=False,
+                            placeholder="Ask about ELOQUENCE... (Enter to send)",
                         )
                     with gr.Column(visible=False) as audio_column:
                         hidden_submit_btn = gr.Button(visible=False, elem_id="trigger_audio_submit")
@@ -415,7 +416,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     with gr.Column():
                         with gr.Row(elem_id="submit_clear_row"):
                             submit_btn = gr.Button("Submit", elem_id="submit_btn")
-                            clear_btn = gr.Button("Clear")
+                            clear_btn = gr.Button("Clear", elem_id="clear_btn")
                         summarize_btn = gr.Button("Summarize conversation", visible=False)
 
                 gr.Examples(examples, input_textbox)
