@@ -423,40 +423,42 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                 gr.Examples(examples, input_textbox)
 
             # RAG and settings column
-            with gr.Column(scale=1):
-                with gr.Accordion("Task & Model Selection", open=True):
-                    task_config = gr.Radio(label="Task configuration", elem_id="task_config")
-                    audio_qa_mode = gr.Radio(
-                        label="Audio QA Mode",
-                        choices=[("Whisper + LLM", "whisper_llm"), ("Speech LLM", "speech_llm")],
-                        visible=False,
-                        elem_id="audio_qa_mode",
-                    )
-                    llm_name = gr.Radio(label="Available LLMs", visible=False, elem_id="llm_name")
-                    text_llm_name = gr.Radio(label="Text LLM", visible=False, elem_id="text_llm_name")
-                    retrievers_radio = gr.Radio(label="Vector Store", visible=False)
-                    index_name = gr.Radio(label="Index name", visible=False)
+            with gr.Column(scale=1, elem_id="config_panel") as config_column:
+                toggle_config_btn = gr.Button("⚙", elem_id="toggle_config_btn")
+                with gr.Column(elem_id="config_panel_body"):
+                    with gr.Accordion("Task & Model Selection", open=True):
+                        task_config = gr.Radio(label="Task configuration", elem_id="task_config")
+                        audio_qa_mode = gr.Radio(
+                            label="Audio QA Mode",
+                            choices=[("Whisper + LLM", "whisper_llm"), ("Speech LLM", "speech_llm")],
+                            visible=False,
+                            elem_id="audio_qa_mode",
+                        )
+                        llm_name = gr.Radio(label="Available LLMs", visible=False, elem_id="llm_name")
+                        text_llm_name = gr.Radio(label="Text LLM", visible=False, elem_id="text_llm_name")
+                        retrievers_radio = gr.Radio(label="Vector Store", visible=False)
+                        index_name = gr.Radio(label="Index name", visible=False)
 
-                with gr.Accordion("Prompt Settings", open=False):
-                    system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
+                    with gr.Accordion("Prompt Settings", open=False):
+                        system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
 
-                    with gr.Row():
-                        load_prompt_btn = gr.Button("Load System Prompt")
-                        save_prompt_btn = gr.Button("Save System Prompt")
+                        with gr.Row():
+                            load_prompt_btn = gr.Button("Load System Prompt")
+                            save_prompt_btn = gr.Button("Save System Prompt")
 
-                    with gr.Row():
-                        load_history_btn = gr.Button("Load History")
-                        save_btn = gr.Button("Save History")
-                
-                with gr.Accordion("LLM Parameters", open=False, visible=False) as llm_params_accordion:
-                    temp = gr.Slider(0, 2, value=1.0, step=0.1, label="Temperature")
-                    top_p = gr.Slider(0, 1, value=0.95, step=0.05, label="Top P")
-                    max_tokens = gr.Slider(100, 4000, value=512, step=64, label="Max tokens")
-                
-                with gr.Accordion("RAG Parameters", open=False, visible=False) as rag_params_accordion:
-                    docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
+                        with gr.Row():
+                            load_history_btn = gr.Button("Load History")
+                            save_btn = gr.Button("Save History")
+                    
+                    with gr.Accordion("LLM Parameters", open=False, visible=False) as llm_params_accordion:
+                        temp = gr.Slider(0, 2, value=1.0, step=0.1, label="Temperature")
+                        top_p = gr.Slider(0, 1, value=0.95, step=0.05, label="Top P")
+                        max_tokens = gr.Slider(100, 4000, value=512, step=64, label="Max tokens")
+                    
+                    with gr.Accordion("RAG Parameters", open=False, visible=False) as rag_params_accordion:
+                        docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
 
-                summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
+                    summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
 
                 with gr.Column(visible=False, elem_id="prompt_panel") as prompt_panel:
                     gr.Markdown("### Select A System Prompt")
@@ -678,6 +680,26 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
 
     filter_column.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
     filter_value.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
+
+    # Toggle configuration panel visibility (JS-based so button stays visible)
+    toggle_config_btn.click(
+        None,
+        [],
+        [],
+        js="""
+        () => {
+            const body = document.getElementById('config_panel_body');
+            const panel = document.getElementById('config_panel');
+            if (!body) return;
+            const isHidden = body.style.display === 'none';
+            body.style.display = isHidden ? '' : 'none';
+            if (panel) {
+                panel.style.minWidth = isHidden ? '' : '56px';
+                panel.style.flex = isHidden ? '' : '0 0 56px';
+            }
+        }
+        """,
+    )
 
 app = gr.mount_gradio_app(
     app,

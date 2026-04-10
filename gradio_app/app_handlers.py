@@ -749,7 +749,8 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
                     if not _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])
                 ]
 
-    return gr.update(choices=choices, value=None, visible=True)
+    default_value = choices[0][1] if choices else None
+    return gr.update(choices=choices, value=default_value, visible=True)
 
 def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}
@@ -783,7 +784,8 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
         if not is_sdialog_model:
             filtered_choices.append((label, value))
 
-    return gr.update(choices=filtered_choices, value=None, visible=True)
+    default_value = filtered_choices[0][1] if filtered_choices else None
+    return gr.update(choices=filtered_choices, value=default_value, visible=True)
 
 def update_llm_params_visibility(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}

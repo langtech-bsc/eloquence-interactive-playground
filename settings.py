@@ -309,14 +309,34 @@ class Settings(BaseSettings):
         padding-top: 8px;
         padding-bottom: 8px;
         border-top: 1px solid #e5e7eb;
+        flex-wrap: nowrap !important;
+        overflow: hidden;
     }
     #submit_clear_row {
-        gap: 12px;
+        gap: 8px;
+    }
+    /* Keep Submit/Clear buttons column at fixed width */
+    #submit_clear_row {
+        flex-shrink: 0;
+        flex-wrap: nowrap !important;
+        align-items: stretch;
+    }
+    #input_controls_row > div:last-child {
+        flex: 0 0 auto !important;
+        max-width: none !important;
+        min-width: auto !important;
+    }
+    /* Text input takes remaining space */
+    #input_controls_row > div:first-child {
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
     }
     #submit_btn,
     #submit_btn button {
         font-weight: 700;
         min-height: 44px;
+        width: 100px;
+        min-width: 100px;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
     }
     #clear_btn,
@@ -325,6 +345,8 @@ class Settings(BaseSettings):
         color: #ffffff !important;
         border: 1px solid #d25610 !important;
         min-height: 44px;
+        width: 100px;
+        min-width: 100px;
         box-shadow: none !important;
     }
     #clear_btn:hover,
@@ -410,6 +432,38 @@ class Settings(BaseSettings):
     }
     #custom_project_footer a:hover {
         text-decoration: underline;
+    }
+    /* Toggle button for config panel */
+    #toggle_config_btn {
+        width: 36px !important;
+        min-width: 36px !important;
+        max-width: 36px !important;
+        height: 36px;
+        padding: 0;
+        border-radius: 50%;
+        font-size: 20px;
+        line-height: 36px;
+        text-align: center;
+        background: #d1d5db !important;
+        color: #374151 !important;
+        border: none !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    #toggle_config_btn:hover {
+        background: #b0b5bc !important;
+    }
+    /* Config panel header row */
+    #config_panel_header {
+        display: none !important;
+    }
+    #config_panel {
+        border: none;
+        border-radius: 10px;
+        padding: 0;
+        background: transparent;
+        transition: flex 0.3s ease, min-width 0.3s ease;
     }
     """
     JS_CODE: str = """
@@ -710,6 +764,13 @@ async () => {
     };
 
     bindEnterFocusHandler();
+
+    // Add tooltip to Clear button
+    const clearBtn = document.querySelector('#clear_btn button') || document.getElementById('clear_btn');
+    if (clearBtn) {
+        clearBtn.title = "Clears the entire conversation history and resets the system prompt";
+    }
+
     const inputObserver = new MutationObserver(() => {
         bindEnterFocusHandler();
     });
