@@ -403,6 +403,8 @@ async () => {
     let recordedChunks = [];
     let recordedBlob = null;
     let focusRetryTimer = null;
+    let postReplyFocusTimer = null;
+    let placeholderCleared = false;
 
     const getSelectedRadioValue = (containerId) => {
         const container = document.getElementById(containerId);
@@ -580,7 +582,21 @@ async () => {
         }
     };
 
-    const getInputTextarea = () => document.querySelector('#input_textbox textarea');
+    const getInputTextarea = () => {
+        return document.querySelector('#input_textbox textarea') ||
+               document.querySelector('#input_controls_row textarea');
+    };
+
+    const clearPlaceholderOnFirstMessage = () => {
+        if (placeholderCleared) return;
+        const textarea = getInputTextarea();
+        if (!textarea) return;
+        const hasText = !!(textarea.value && textarea.value.trim().length > 0);
+        if (hasText) {
+            textarea.placeholder = "";
+            placeholderCleared = true;
+        }
+    };
 
     const isVisible = (el) => {
         if (!el) return false;
@@ -631,6 +647,7 @@ async () => {
     const submitBtn = document.getElementById("submit_btn");
     if (submitBtn) {
         submitBtn.addEventListener("click", async (event) => {
+            clearPlaceholderOnFirstMessage();
             queueInputFocus();
             if (!isAudioTaskSelected()) {
                 return;
@@ -663,8 +680,12 @@ async () => {
         const textarea = getInputTextarea();
         if (!textarea || textarea.dataset.focusBound === "1") return;
         textarea.dataset.focusBound = "1";
+        textarea.addEventListener("input", () => {
+            clearPlaceholderOnFirstMessage();
+        });
         textarea.addEventListener("keydown", (event) => {
             if (event.key === "Enter" && !event.shiftKey) {
+                clearPlaceholderOnFirstMessage();
                 queueInputFocus();
             }
         });
@@ -675,6 +696,20 @@ async () => {
         bindEnterFocusHandler();
     });
     inputObserver.observe(document.body, { childList: true, subtree: true });
+
+    const chatNode = document.querySelector('[aria-label="chatbot conversation"]');
+    if (chatNode) {
+        const replyObserver = new MutationObserver(() => {
+            if (postReplyFocusTimer) {
+                clearTimeout(postReplyFocusTimer);
+            }
+            // Debounce during token streaming and refocus once updates settle.
+            postReplyFocusTimer = setTimeout(() => {
+                queueInputFocus();
+            }, 250);
+        });
+        replyObserver.observe(chatNode, { childList: true, subtree: true, characterData: true });
+    }
 
     // Initialize auto-scroll
     globalThis.Scrolldown();

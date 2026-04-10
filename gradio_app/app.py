@@ -383,7 +383,8 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                             scale=3,
                             show_label=False,
                             container=False,
-                            placeholder="Ask about ELOQUENCE... (Enter to send)",
+                            placeholder="Type here anything... (Enter to send or click submit button)",
+                            elem_id="input_textbox",
                         )
                     with gr.Column(visible=False) as audio_column:
                         hidden_submit_btn = gr.Button(visible=False, elem_id="trigger_audio_submit")
