@@ -262,17 +262,18 @@ class Settings(BaseSettings):
     div.svelte-sa48pu>.form>* {
         min-width: 70px;
     }
-    #chatbot .message,
-    #chatbot .message-wrap .message {
+    /* Softer bubble corners */
+    #chatbot :not(.component-wrap).flex-wrap.user {
         border-radius: 22px !important;
-    }
-    #chatbot .message.user,
-    #chatbot .message-wrap.user .message {
         border-bottom-right-radius: 8px !important;
     }
-    #chatbot .message.bot,
-    #chatbot .message-wrap.bot .message {
+    #chatbot :not(.component-wrap).flex-wrap.bot {
+        border-radius: 22px !important;
         border-bottom-left-radius: 8px !important;
+    }
+    /* Hide thumbs up/down only for user messages */
+    #chatbot .message-buttons-right {
+        display: none !important;
     }
     .svelte-1mhtq7j {
         background: #f2d518;
