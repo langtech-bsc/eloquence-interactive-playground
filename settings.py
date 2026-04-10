@@ -383,6 +383,7 @@ async () => {
     let streamFinalizeUrl = null;
     let recordedChunks = [];
     let recordedBlob = null;
+    let focusRetryTimer = null;
 
     const getSelectedRadioValue = (containerId) => {
         const container = document.getElementById(containerId);
@@ -560,6 +561,35 @@ async () => {
         }
     };
 
+    const getInputTextarea = () => document.querySelector('#input_textbox textarea');
+
+    const isVisible = (el) => {
+        if (!el) return false;
+        return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    };
+
+    const queueInputFocus = () => {
+        if (focusRetryTimer) {
+            clearInterval(focusRetryTimer);
+            focusRetryTimer = null;
+        }
+        let attempts = 0;
+        focusRetryTimer = setInterval(() => {
+            attempts += 1;
+            const textarea = getInputTextarea();
+            if (textarea && !textarea.disabled && isVisible(textarea)) {
+                textarea.focus();
+                const textLen = textarea.value ? textarea.value.length : 0;
+                textarea.setSelectionRange(textLen, textLen);
+                clearInterval(focusRetryTimer);
+                focusRetryTimer = null;
+            } else if (attempts > 60) {
+                clearInterval(focusRetryTimer);
+                focusRetryTimer = null;
+            }
+        }, 100);
+    };
+
     const uploadRecordedAudio = async () => {
         if (!recordedBlob) return null;
         if (!streamFinalizeUrl) {
@@ -582,6 +612,7 @@ async () => {
     const submitBtn = document.getElementById("submit_btn");
     if (submitBtn) {
         submitBtn.addEventListener("click", async (event) => {
+            queueInputFocus();
             if (!isAudioTaskSelected()) {
                 return;
             }
@@ -608,6 +639,23 @@ async () => {
             }
         }, true);
     }
+
+    const bindEnterFocusHandler = () => {
+        const textarea = getInputTextarea();
+        if (!textarea || textarea.dataset.focusBound === "1") return;
+        textarea.dataset.focusBound = "1";
+        textarea.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                queueInputFocus();
+            }
+        });
+    };
+
+    bindEnterFocusHandler();
+    const inputObserver = new MutationObserver(() => {
+        bindEnterFocusHandler();
+    });
+    inputObserver.observe(document.body, { childList: true, subtree: true });
 
     // Initialize auto-scroll
     globalThis.Scrolldown();
