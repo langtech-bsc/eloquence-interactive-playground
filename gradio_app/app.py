@@ -532,6 +532,18 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
 
+    input_textbox.submit(
+        validate_interaction,
+        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
+        None
+    ).success(
+        interact,
+        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [chatbot, context_html, rag_column, input_textbox]
+    ).then(
+        lambda: gr.update(interactive=True), None, [input_textbox]
+    )
+
     hidden_submit_btn.click(
         validate_interaction,
         [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
