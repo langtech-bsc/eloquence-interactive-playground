@@ -134,6 +134,17 @@ class Settings(BaseSettings):
         padding: 2px
         border-radius: 6px;
     }
+    #summary_controls_row {
+        align-items: center;
+    }
+    #summary_button_column {
+        align-self: center;
+    }
+    #summarize_btn button {
+        min-height: 56px;
+        line-height: 1.2;
+        white-space: pre-line;
+    }
     .svelte-1mhtq7j {
         background: #565553 !important;
         color: white;

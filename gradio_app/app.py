@@ -418,7 +418,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         with gr.Row(elem_id="submit_clear_row"):
                             submit_btn = gr.Button("Submit", elem_id="submit_btn")
                             clear_btn = gr.Button("Clear", elem_id="clear_btn")
-                        summarize_btn = gr.Button("Summarize conversation", visible=False)
+
+                with gr.Row(elem_id="summary_controls_row"):
+                    with gr.Column(scale=6, min_width=0):
+                        summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
+                    with gr.Column(scale=1, min_width=130, elem_id="summary_button_column"):
+                        summarize_btn = gr.Button("Summarize\nconversation", visible=False, elem_id="summarize_btn")
 
                 gr.Examples(examples, input_textbox)
 
@@ -457,8 +462,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     
                     with gr.Accordion("RAG Parameters", open=False, visible=False) as rag_params_accordion:
                         docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
-
-                    summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
 
                 with gr.Column(visible=False, elem_id="prompt_panel") as prompt_panel:
                     gr.Markdown("### Select A System Prompt")
