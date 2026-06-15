@@ -1,5 +1,7 @@
 import os
 import json
+import hashlib
+import re
 import tqdm
 
 import lancedb
@@ -13,6 +15,19 @@ from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, CS
 
 from gradio_app.backend.embedders import EmbedderFactory
 from settings import settings
+
+
+def normalize_index_name(index_name: str) -> str:
+    """Return a LanceDB-safe table name for a user-facing index name."""
+    normalized = re.sub(r"[^A-Za-z0-9_]", "_", index_name.strip())
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    if not normalized:
+        raise ValueError("Index name cannot be empty.")
+    if normalized == index_name:
+        return normalized
+    digest = hashlib.sha1(index_name.encode("utf-8")).hexdigest()[:8]
+    return f"{normalized}_{digest}"
+
 
 def get_doc_loader(file_path):
     extension = file_path.split(".")[-1]
@@ -39,6 +54,7 @@ class LanceDBRetriever:
         self._load_index_config()
 
     def __call__(self, index_name, query, top_k=5):
+        index_name = normalize_index_name(index_name)
         embedder = self._get_embedder(index_name)
         table = self.db.open_table(index_name)
         query_vec = embedder.embed_query(query)
@@ -50,6 +66,7 @@ class LanceDBRetriever:
         return documents
 
     def _get_embedder(self, index_name):
+        index_name = normalize_index_name(index_name)
         if index_name not in self.index_config:
             self._load_index_config()
         if index_name not in self.index_config:
@@ -75,6 +92,7 @@ class LanceDBRetriever:
         tbl.add(df)
 
     def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=False):
+        table_name = normalize_index_name(table_name)
         db = lancedb.connect(settings.LANCEDB_DIRECTORY)
         batch_size = 128
 
@@ -134,26 +152,34 @@ class LanceDBRetriever:
 
     
     def add_single_chunk(self, text: str, metadata: str, index_name: str):
+        index_name = normalize_index_name(index_name)
         embedder = self._get_embedder(index_name)
         table = self.db.open_table(index_name)
         self._add_batch_to_table([text], [metadata], embedder, table)
 
     def delete_index(self, index_name: str):
+        index_name = normalize_index_name(index_name)
         self._load_index_config()
 
         table_exists = True
         try:
+            # Try to open the table 
             self.db.open_table(index_name)
         except Exception:
             table_exists = False
 
+        # Check if the index exists either as a table in the database or in the config. 
+        # If it doesn't exist in either place, raise an error. 
+        # This prevents accidentally deleting an index that doesn't exist and also provides a clearer error message to the user.
         index_in_config = index_name in self.index_config
         if not table_exists and not index_in_config:
             raise ValueError(f"Index '{index_name}' does not exist.")
 
+        # If the table exists, drop it. 
         if table_exists:
             self.db.drop_table(index_name)
 
+        # If the index is in config, remove it from there and save the config. 
         if index_in_config:
             del self.index_config[index_name]
             self._save_index_config()
