@@ -36,8 +36,13 @@ class LocalTaskHandler:
                 if audio_mode == "diarization":
                     params["diarize"] = True
         documents = []
+        documents_metadata = []
         if self.task_config["RAG"]:
-            documents = self.retriever.search(index_name, query, docs_k)
+            if hasattr(self.retriever, "search_with_metadata"):
+                documents, documents_metadata = self.retriever.search_with_metadata(index_name, query, docs_k)
+            else:
+                documents = self.retriever.search(index_name, query, docs_k)
+        # Retrieved RAG snippets reach the LLM here
         llm_response = self.llm_handler(
             llm_name,
             system_prompt,
@@ -48,15 +53,19 @@ class LocalTaskHandler:
         )
 
         if llm_response is None:
-            yield "", documents
+            yield "", documents, documents_metadata
             return
 
         if isinstance(llm_response, str):
-            yield llm_response, documents
+            yield llm_response, documents, documents_metadata
+            return
+
+        if isinstance(llm_response, dict):
+            yield llm_response, documents, documents_metadata
             return
 
         for part in llm_response:
-            yield part, documents
+            yield part, documents, documents_metadata
 
 
 class RemoteHandlerClient:

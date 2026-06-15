@@ -62,7 +62,13 @@ class LanceDBRetriever:
         documents = documents.limit(top_k).to_list()
         if self.threshold:
             documents = [d for d in documents if d['_distance'] <= self.threshold]
-        documents = [doc[settings.TEXT_COLUMN_NAME] for doc in documents]
+        documents = [
+            {
+                "text": doc[settings.TEXT_COLUMN_NAME],
+                "metadata": doc.get(settings.METADATA),
+            }
+            for doc in documents
+        ]
         return documents
 
     def _get_embedder(self, index_name):
@@ -91,7 +97,60 @@ class LanceDBRetriever:
 
         tbl.add(df)
 
-    def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=False):
+    @staticmethod
+    def _turn_line(turn):
+        speaker = str(turn.get("speaker") or "").strip()
+        text = str(turn.get("text") or "").strip()
+        if not text:
+            return ""
+        return f"{speaker}: {text}" if speaker else text
+
+    def _chunks_from_turns(self, turns, chunk_size, source_metadata=None):
+        max_chars = int(chunk_size or 500)
+        snippets = []
+        current_turns = []
+        current_lines = []
+        current_len = 0
+
+        def flush_current():
+            if not current_turns:
+                return
+            first_turn = current_turns[0]
+            last_turn = current_turns[-1]
+            snippet_metadata = {
+                "start_time": first_turn.get("start_time"),
+                "end_time": last_turn.get("end_time"),
+                "turn_count": len(current_turns),
+            }
+            if source_metadata is not None:
+                snippet_metadata["source_metadata"] = source_metadata
+            snippets.append((
+                "\n".join(current_lines).strip(),
+                json.dumps(snippet_metadata, ensure_ascii=False),
+            ))
+
+        for turn in turns:
+            if not isinstance(turn, dict):
+                continue
+            line = self._turn_line(turn)
+            if not line:
+                continue
+
+            next_len = current_len + len(line) + (1 if current_lines else 0)
+            if current_turns and next_len > max_chars:
+                flush_current()
+                current_turns = []
+                current_lines = []
+                current_len = 0
+
+            current_turns.append(turn)
+            current_lines.append(line)
+            current_len += len(line) + (1 if current_len else 0)
+
+        flush_current()
+        return snippets
+
+    def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=False, metadata=None, turns=None):
         table_name = normalize_index_name(table_name)
         db = lancedb.connect(settings.LANCEDB_DIRECTORY)
         batch_size = 128
@@ -125,6 +184,26 @@ class LanceDBRetriever:
         else:
             splitter = SemanticChunker(embedder, breakpoint_threshold_type="percentile", breakpoint_threshold_amount=float(percentile))
 
+        if turns is not None:
+            try:
+                parsed_turns = json.loads(turns) if isinstance(turns, str) else turns
+                source_metadata = json.loads(metadata) if isinstance(metadata, str) and metadata else metadata
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid turn metadata JSON: {exc}") from exc
+
+            chunks = self._chunks_from_turns(parsed_turns or [], chunk_size, source_metadata=source_metadata)
+            for i in tqdm.tqdm(range(0, int(np.ceil(len(chunks) / batch_size))), desc="Ingesting"):
+                texts, metadata_values = [], []
+                for text, md in chunks[i * batch_size:(i + 1) * batch_size]:
+                    if len(text) > 0:
+                        texts.append(text)
+                        metadata_values.append(md)
+                self._add_batch_to_table(texts, metadata_values, embedder, tbl)
+
+            self.index_config[table_name] = embed_name
+            self._save_index_config()
+            return
+
         for file_path in file_paths:
             loader = get_doc_loader(file_path)
             pages = []
@@ -132,18 +211,21 @@ class LanceDBRetriever:
                 pages.append(page)
 
             chunked_documents = splitter.split_documents(pages)
-            try:
-                chunks = [(doc.page_content, f"{doc.metadata['source']}-{doc.metadata['page']}") for doc in chunked_documents]
-            except:
-                chunks = [(doc.page_content, f"{doc.metadata}") for doc in chunked_documents]
+            if metadata is not None:
+                chunks = [(doc.page_content, metadata) for doc in chunked_documents]
+            else:
+                try:
+                    chunks = [(doc.page_content, f"{doc.metadata['source']}-{doc.metadata['page']}") for doc in chunked_documents]
+                except:
+                    chunks = [(doc.page_content, f"{doc.metadata}") for doc in chunked_documents]
 
             for i in tqdm.tqdm(range(0, int(np.ceil(len(chunks) / batch_size))), desc="Ingesting"):
-                texts, metadata = [], []
+                texts, metadata_values = [], []
                 for text, md in chunks[i * batch_size:(i + 1) * batch_size]:
                     if len(text) > 0:
                         texts.append(text)
-                        metadata.append(md)
-                self._add_batch_to_table(texts, metadata, embedder, tbl)
+                        metadata_values.append(md)
+                self._add_batch_to_table(texts, metadata_values, embedder, tbl)
 
 
         self.index_config[table_name] = embed_name

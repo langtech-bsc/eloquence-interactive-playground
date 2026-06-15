@@ -16,6 +16,7 @@ class RequestQueryLLM(BaseModel):
     system_prompt: Optional[str] = None
     language: Optional[str] = None
     render_doc_links: Optional[bool] = True
+    chunk_start_seconds: Optional[float] = 0.0
 
 
 class RequestBatchQuery(BaseModel):
@@ -39,11 +40,16 @@ class RequestIngest(BaseModel):
     splitting_strategy: Optional[str] =  "recursive"
     retriever_address: Optional[str] = "public"
     append: Optional[bool] = False
+    snippet_metadata: Optional[Dict[str, Any]] = None
+    snippet_turns: Optional[List[Dict[str, Any]]] = None
 
 
 class ResponseQueryLLM(BaseModel):
     text: str
     documents: List[str]
+    documents_metadata: Optional[List[Any]] = None
+    transcription_metadata: Optional[Dict[str, Any]] = None
+    transcription_turns: Optional[List[Dict[str, Any]]] = None
     error: Optional[str] = None
 
 

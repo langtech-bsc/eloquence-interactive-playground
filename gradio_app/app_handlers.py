@@ -2,7 +2,7 @@ import shutil
 import datetime
 import os
 import json
-from typing import List
+from typing import Any, Dict, List, Optional
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -36,7 +36,18 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name: str, file_paths: List[str], splitting_strategy: str, retriever_address: str, append: bool = False):
+def perform_ingest(
+    index_name: str,
+    chunk_size: int,
+    percentile: int,
+    embed_name: str,
+    file_paths: List[str],
+    splitting_strategy: str,
+    retriever_address: str,
+    append: bool = False,
+    snippet_metadata: Optional[Dict[str, Any]] = None,
+    snippet_turns: Optional[List[Dict[str, Any]]] = None,
+):
     """Handles the document ingestion process."""
     if not file_paths:
         raise gr.Error("You must upload at least one file.")
@@ -62,7 +73,9 @@ def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name
             embed_name,
             index_name,
             splitting_strategy,
-            append=append
+            append=append,
+            metadata=snippet_metadata,
+            turns=snippet_turns,
         )
     finally:
         generic_root = os.path.abspath(settings.GENERIC_UPLOAD)
@@ -132,6 +145,7 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
     audio_data = kwargs.get("audio")
     language = kwargs.get("language")
     render_doc_links = kwargs.get("render_doc_links", True)
+    metadata_sink = kwargs.get("metadata_sink")
 
     logger.info('Starting LLM stream and document retrieval...')
     stream = task_handler(
@@ -148,7 +162,19 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
         language=language
     )
 
-    for part, documents in stream:
+    for stream_item in stream:
+        if len(stream_item) == 3:
+            part, documents, documents_metadata = stream_item
+        else:
+            part, documents = stream_item
+            documents_metadata = []
+
+        if metadata_sink is not None:
+            metadata_sink["documents"] = documents_metadata
+        if isinstance(part, dict):
+            if metadata_sink is not None:
+                metadata_sink["transcription"] = part
+            part = part.get("text", "")
         history[-1][1] += part
         if render_doc_links:
             history[-1][1] = replace_doc_links(history[-1][1])

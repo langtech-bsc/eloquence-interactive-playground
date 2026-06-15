@@ -152,10 +152,67 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.add_middleware(SubpathMiddleware, settings=settings)
 
+
+def _to_float(value, default=None):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_transcription_metadata(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> Optional[Dict[str, Any]]:
+    if not transcription_payload:
+        return None
+
+    segments = transcription_payload.get("segments") or []
+    if not segments:
+        return {
+            "chunk_start_seconds": chunk_start_seconds,
+            "start_time": chunk_start_seconds,
+            "end_time": chunk_start_seconds,
+        }
+
+    first_start = _to_float(segments[0].get("start"), 0.0)
+    last_end = _to_float(segments[-1].get("end"), first_start)
+
+    return {
+        "chunk_start_seconds": chunk_start_seconds,
+        "start_time": chunk_start_seconds + first_start,
+        "end_time": chunk_start_seconds + last_end,
+    }
+
+
+def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> List[Dict[str, Any]]:
+    if not transcription_payload:
+        return []
+
+    turns = []
+    for segment in transcription_payload.get("segments") or []:
+        if not isinstance(segment, dict):
+            continue
+
+        text = str(segment.get("text") or "").strip()
+        if not text:
+            continue
+
+        local_start = _to_float(segment.get("start"), 0.0)
+        local_end = _to_float(segment.get("end"), local_start)
+        turns.append({
+            "speaker": segment.get("speaker"),
+            "text": text,
+            "start_time": chunk_start_seconds + local_start,
+            "end_time": chunk_start_seconds + local_end,
+        })
+
+    return turns
+
+
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
     if kwargs["llm_name"] not in available_llms.keys():
-        return "", []  # Return empty text and documents for unknown LLM
+        return "", [], [], None, []  # Return empty text and documents for unknown LLM
     
     _, task_configs_list = _get_task_configs()
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
@@ -177,24 +234,39 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
         else:
             query = "Describe the audio."
     
+    metadata_sink = {}
+    chunk_start_seconds = _to_float(kwargs.get("chunk_start_seconds"), 0.0)
+
     stream = _process_llm_request(
         kwargs["llm_name"], kwargs.get("system_prompt"), history, query,
         kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
         temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
         max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language"),
-        render_doc_links=kwargs.get("render_doc_links", True)
+        render_doc_links=kwargs.get("render_doc_links", True),
+        metadata_sink=metadata_sink
     )
     
     final_text = ""
     final_docs = []
+    final_docs_metadata = []
     for updated_history, docs in stream:
         final_text = updated_history[-1][1]
         if docs:
             final_docs = [d if isinstance(d, str) else str(d) for d in docs]
         else:
             final_docs = []
+        final_docs_metadata = metadata_sink.get("documents", [])
     
-    return final_text, final_docs
+    transcription_metadata = _build_transcription_metadata(
+        metadata_sink.get("transcription"),
+        chunk_start_seconds,
+    )
+    transcription_turns = _build_transcription_turns(
+        metadata_sink.get("transcription"),
+        chunk_start_seconds,
+    )
+
+    return final_text, final_docs, final_docs_metadata, transcription_metadata, transcription_turns
 
 
 @app.post("/stream")
@@ -222,14 +294,21 @@ async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadF
     """Primary endpoint for submitting a single query to the LLM."""
     request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
     try:
-        response_text, documents = await query_llm_general(
+        response_text, documents, documents_metadata, transcription_metadata, transcription_turns = await query_llm_general(
             available_llms=llm_handler.available_llms,
             audio_file=audio_file,
             **request_data.model_dump()
         )
         if len(documents) < 2:
             documents = []
-        return ResponseQueryLLM(text=response_text, documents=documents)
+            documents_metadata = []
+        return ResponseQueryLLM(
+            text=response_text,
+            documents=documents,
+            documents_metadata=documents_metadata,
+            transcription_metadata=transcription_metadata,
+            transcription_turns=transcription_turns,
+        )
     except Exception as exc:
         logger.exception("Query failed")
         return ResponseQueryLLM(text="", documents=[], error=str(exc))
@@ -245,7 +324,7 @@ async def batch_query_endpoint(body: str = Form(...), data_file: UploadFile = Fi
     for conv_id, turns in batch_data.items():
         history = []
         for turn in turns:
-            response_text, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
+            response_text, _, _, _, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
             history.append([turn, response_text])
         processed_data[conv_id] = history
     
@@ -272,7 +351,9 @@ async def ingest_endpoint(content_file: UploadFile, body: str = Form(...)):
             file_paths=[temp_file_path],
             splitting_strategy=request.splitting_strategy,
             retriever_address=request.retriever_address,
-            append=request.append
+            append=request.append,
+            snippet_metadata=request.snippet_metadata,
+            snippet_turns=request.snippet_turns,
         )
         return ResponseIngest(status="success", msg="Document ingested successfully.")
     except Exception as e:
