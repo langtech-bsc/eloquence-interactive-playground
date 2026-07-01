@@ -13,6 +13,8 @@ RUN pip install torch torchvision torchaudio --index-url https://download.pytorc
 RUN pip install openai==1.102.0
 COPY . .
 
+RUN mkdir /data
+
 EXPOSE 7860
 ENV GRADIO_SERVER_NAME="0.0.0.0"
 ENV LLM_BACKEND="bsc"
