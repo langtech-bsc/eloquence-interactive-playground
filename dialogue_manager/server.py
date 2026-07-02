@@ -134,11 +134,11 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint")
-    args = parser.parse_args()
-    if args.endpoint is None:
-        endpoint = settings.DM_ENDPOINT.replace("http://", "").split(":")
-    else:
-        endpoint = args.endpoint.replace("http://", "").split(":")
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--endpoint")
+    # args = parser.parse_args()
+    # if args.endpoint is None:
+    endpoint = settings.DM_ENDPOINT.replace("http://", "").split(":")
+    # else:
+    #    endpoint = args.endpoint.replace("http://", "").split(":")
     uvicorn.run(app, host=endpoint[0], port=int(endpoint[1]))

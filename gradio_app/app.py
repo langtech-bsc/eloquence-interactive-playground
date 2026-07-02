@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import sqlite3
 from typing import *
-
+import uvicorn
 import gradio as gr
 import markdown
 
@@ -14,8 +14,11 @@ from fastapi import FastAPI, UploadFile, Form, File
 from pydantic import TypeAdapter
 from fastapi.middleware.cors import CORSMiddleware
 
-from gradio_app.helpers import  extract_docs_from_rendered_template
+from gradio_app.helpers import extract_docs_from_rendered_template
 from gradio_app.messages import *
+
+from dialog_manager.client import DialogClient  ### <--- ADDED
+
 from retrievers.client import RetrieverClient
 from settings import settings, normalize_path_prefix
 from gradio_app.app_handlers import (
@@ -87,7 +90,7 @@ class SubpathMiddleware:
 
     def _strip_prefix(self, scope, prefix: str):
         path = scope.get("path", "")
-        stripped = path[len(prefix):]
+        stripped = path[len(prefix) :]
         if not stripped:
             stripped = "/"
         elif not stripped.startswith("/"):
@@ -112,9 +115,11 @@ class SubpathMiddleware:
         scope["root_path"] = prefix or ""
         await self.app(scope, receive, send)
 
+
 def show_feedback(request: gr.Request, x: gr.LikeData):
     # This is currently not used:  x.index[0], x.index[1]
     return gr.update(visible=True), gr.update(value=str(x.liked))
+
 
 def process_filter_value_change(selected_col: str, selected_val: str):
     feedback_df = _load_feedback_df()
@@ -122,17 +127,22 @@ def process_filter_value_change(selected_col: str, selected_val: str):
         val_dropdown = gr.Dropdown(interactive=False)
     else:
         avail_choices = ["all"] + list(feedback_df[selected_col].unique())
-        selected_val = selected_val if (selected_val is not None and selected_val != "all" and selected_val in avail_choices) else "all"
+        selected_val = (
+            selected_val
+            if (selected_val is not None and selected_val != "all" and selected_val in avail_choices)
+            else "all"
+        )
         val_dropdown = gr.Dropdown(choices=avail_choices, value=selected_val, interactive=True)
     if selected_col == "None" or selected_val == "all":
         filtered_df = feedback_df
     else:
-        filtered_df = feedback_df[feedback_df[selected_col]==selected_val]
+        filtered_df = feedback_df[feedback_df[selected_col] == selected_val]
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8")
     filtered_df.to_json(temp_file.name, orient="records", indent=2)
     temp_file.close()
- 
+
     return gr.DataFrame(filtered_df, interactive=False), gr.update(value=temp_file.name), val_dropdown
+
 
 def authenticate(user: str, password: str) -> bool:
     """Authenticates a user against the SQLite database."""
@@ -162,7 +172,9 @@ def _to_float(value, default=None):
         return default
 
 
-def _build_transcription_metadata(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> Optional[Dict[str, Any]]:
+def _build_transcription_metadata(
+    transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float
+) -> Optional[Dict[str, Any]]:
     if not transcription_payload:
         return None
 
@@ -184,7 +196,9 @@ def _build_transcription_metadata(transcription_payload: Optional[Dict[str, Any]
     }
 
 
-def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> List[Dict[str, Any]]:
+def _build_transcription_turns(
+    transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float
+) -> List[Dict[str, Any]]:
     if not transcription_payload:
         return []
 
@@ -199,12 +213,14 @@ def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], 
 
         local_start = _to_float(segment.get("start"), 0.0)
         local_end = _to_float(segment.get("end"), local_start)
-        turns.append({
-            "speaker": segment.get("speaker"),
-            "text": text,
-            "start_time": chunk_start_seconds + local_start,
-            "end_time": chunk_start_seconds + local_end,
-        })
+        turns.append(
+            {
+                "speaker": segment.get("speaker"),
+                "text": text,
+                "start_time": chunk_start_seconds + local_start,
+                "end_time": chunk_start_seconds + local_end,
+            }
+        )
 
     return turns
 
@@ -213,14 +229,14 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
     if kwargs["llm_name"] not in available_llms.keys():
         return "", [], [], None, []  # Return empty text and documents for unknown LLM
-    
+
     _, task_configs_list = _get_task_configs()
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
     task_config = task_configs.get(kwargs.get("task_config"), settings.BASIC_CONFIG)
-    
+
     retriever_address = kwargs.get("retriever_address", settings.RETRIEVER_ENDPOINT)
     retriever_instance = RetrieverClient(endpoint=retriever_address)
-    
+
     history = kwargs.get("history") or []
     query = kwargs.get("input_text", "")
     audio_data = await audio_file.read() if audio_file else None
@@ -233,19 +249,28 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
             query = "Diarize the audio."
         else:
             query = "Describe the audio."
-    
+
     metadata_sink = {}
     chunk_start_seconds = _to_float(kwargs.get("chunk_start_seconds"), 0.0)
 
     stream = _process_llm_request(
-        kwargs["llm_name"], kwargs.get("system_prompt"), history, query,
-        kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
-        temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
-        max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language"),
+        kwargs["llm_name"],
+        kwargs.get("system_prompt"),
+        history,
+        query,
+        kwargs.get("docs_k"),
+        kwargs.get("index_name"),
+        task_config,
+        retriever_instance,
+        temperature=kwargs.get("temp"),
+        top_p=kwargs.get("top_p"),
+        max_tokens=kwargs.get("max_tokens"),
+        audio=audio_data,
+        language=kwargs.get("language"),
         render_doc_links=kwargs.get("render_doc_links", True),
-        metadata_sink=metadata_sink
+        metadata_sink=metadata_sink,
     )
-    
+
     final_text = ""
     final_docs = []
     final_docs_metadata = []
@@ -256,7 +281,7 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
         else:
             final_docs = []
         final_docs_metadata = metadata_sink.get("documents", [])
-    
+
     transcription_metadata = _build_transcription_metadata(
         metadata_sink.get("transcription"),
         chunk_start_seconds,
@@ -294,10 +319,10 @@ async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadF
     """Primary endpoint for submitting a single query to the LLM."""
     request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
     try:
-        response_text, documents, documents_metadata, transcription_metadata, transcription_turns = await query_llm_general(
-            available_llms=llm_handler.available_llms,
-            audio_file=audio_file,
-            **request_data.model_dump()
+        response_text, documents, documents_metadata, transcription_metadata, transcription_turns = (
+            await query_llm_general(
+                available_llms=llm_handler.available_llms, audio_file=audio_file, **request_data.model_dump()
+            )
         )
         if len(documents) < 2:
             documents = []
@@ -324,10 +349,15 @@ async def batch_query_endpoint(body: str = Form(...), data_file: UploadFile = Fi
     for conv_id, turns in batch_data.items():
         history = []
         for turn in turns:
-            response_text, _, _, _, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
+            response_text, _, _, _, _ = await query_llm_general(
+                available_llms=llm_handler.available_llms,
+                input_text=turn,
+                history=deepcopy(history),
+                **request_data.model_dump(),
+            )
             history.append([turn, response_text])
         processed_data[conv_id] = history
-    
+
     return ResponseBatchQuery(processed=processed_data)
 
 
@@ -443,20 +473,20 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                 chatbot = gr.Chatbot(
                     [],
                     elem_id="chatbot",
-                    avatar_images=('assets/user.jpeg', 'assets/eloq.png'),
+                    avatar_images=("assets/user.jpeg", "assets/eloq.png"),
                     bubble_full_width=True,
                     height=500,
                     label="EloquenceBot",
                     sanitize_html=False,
-                    show_copy_button=False
+                    show_copy_button=False,
                 )
-                
+
                 # Feedback UI
                 with gr.Row(visible=False) as additional_feedback:
                     user_binary_feedback = gr.Dropdown(label="Feedback", choices=["False", "True"])
                     user_additional_feedback = gr.Textbox(label="Additional Feedback", lines=2)
                     user_additional_feedback_submit = gr.Button("Submit Feedback")
-                
+
                 # Input UI
                 with gr.Row(elem_id="input_controls_row"):
                     with gr.Column(visible=True) as text_column:
@@ -493,7 +523,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                                 ("Serbian", "sr"),
                             ],
                             value="en",
-                            visible=False
+                            visible=False,
                         )
                     with gr.Column():
                         with gr.Row(elem_id="submit_clear_row"):
@@ -535,12 +565,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         with gr.Row():
                             load_history_btn = gr.Button("Load History")
                             save_btn = gr.Button("Save History")
-                    
+
                     with gr.Accordion("LLM Parameters", open=False, visible=False) as llm_params_accordion:
                         temp = gr.Slider(0, 2, value=1.0, step=0.1, label="Temperature")
                         top_p = gr.Slider(0, 1, value=0.95, step=0.05, label="Top P")
                         max_tokens = gr.Slider(100, 4000, value=512, step=64, label="Max tokens")
-                    
+
                     with gr.Accordion("RAG Parameters", open=False, visible=False) as rag_params_accordion:
                         docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
 
@@ -559,7 +589,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     with gr.Row():
                         confirm_history_btn = gr.Button("Confirm")
                         close_history_btn = gr.Button("Close")
-                
+
                 # RAG context display
                 with gr.Column(visible=False) as rag_column:
                     gr.Markdown("### Retrieved Context")
@@ -580,14 +610,19 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                 gr.Markdown("### Splitting Strategy")
                 splitting_strategy = gr.Radio(
                     label="Strategy",
-                    choices=[("By-Length (recursive)", "recursive"), ("Semantic", "semantic"), ("By-Length (simple)", "simple")],
-                    value="recursive"
+                    choices=[
+                        ("By-Length (recursive)", "recursive"),
+                        ("Semantic", "semantic"),
+                        ("By-Length (simple)", "simple"),
+                    ],
+                    value="recursive",
                 )
                 chunk_length = gr.Number(label="Chunk Length (for by-length)", value=500)
                 percentile = gr.Number(label="Percentile Threshold (for semantic)", value=95)
                 run_ingestion = gr.Button("Run Ingestion")
-                ingestion_status = gr.Textbox(label="Ingestion Status", interactive=False, visible=False, elem_id="ingestion_status")
-
+                ingestion_status = gr.Textbox(
+                    label="Ingestion Status", interactive=False, visible=False, elem_id="ingestion_status"
+                )
 
     # --- FEEDBACK TAB ---
     with gr.Tab("Feedback") as feedback_tab:
@@ -595,11 +630,11 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
             filter_column = gr.Dropdown(label="Filter Column")
             filter_value = gr.Dropdown(label="Filter Value", interactive=False)
             download_feedback = gr.DownloadButton(
-                        label="Download feedback",
-                        value=os.path.join(settings.USER_WORKSPACES, "user_feedback.json"),
-                        scale=1,
-                        interactive=True,
-                    )
+                label="Download feedback",
+                value=os.path.join(settings.USER_WORKSPACES, "user_feedback.json"),
+                scale=1,
+                interactive=True,
+            )
         with gr.Row():
             feedback_df = gr.Dataframe()
 
@@ -610,18 +645,41 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     demo.load(
         get_dynamic_components,
         [],
-        [task_config, prompt_radio, history_radio, llm_name, retrievers_radio, retrievers_radio_ing, feedback_df, filter_column]
+        [
+            task_config,
+            prompt_radio,
+            history_radio,
+            llm_name,
+            retrievers_radio,
+            retrievers_radio_ing,
+            feedback_df,
+            filter_column,
+        ],
     )
 
     # --- Playground Events ---
     submit_btn.click(
         validate_interaction,
         [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
-        None
+        None,
     ).success(
         interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
+        [
+            chatbot,
+            input_textbox,
+            llm_name,
+            docs_k,
+            temp,
+            top_p,
+            max_tokens,
+            index_name,
+            system_prompt,
+            task_config,
+            language_dropdown,
+            audio_qa_mode,
+            text_llm_name,
+        ],
+        [chatbot, context_html, rag_column, input_textbox],
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
@@ -629,11 +687,25 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     input_textbox.submit(
         validate_interaction,
         [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
-        None
+        None,
     ).success(
         interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
+        [
+            chatbot,
+            input_textbox,
+            llm_name,
+            docs_k,
+            temp,
+            top_p,
+            max_tokens,
+            index_name,
+            system_prompt,
+            task_config,
+            language_dropdown,
+            audio_qa_mode,
+            text_llm_name,
+        ],
+        [chatbot, context_html, rag_column, input_textbox],
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
@@ -641,16 +713,34 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     hidden_submit_btn.click(
         validate_interaction,
         [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
-        None
+        None,
     ).success(
         interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
+        [
+            chatbot,
+            input_textbox,
+            llm_name,
+            docs_k,
+            temp,
+            top_p,
+            max_tokens,
+            index_name,
+            system_prompt,
+            task_config,
+            language_dropdown,
+            audio_qa_mode,
+            text_llm_name,
+        ],
+        [chatbot, context_html, rag_column, input_textbox],
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
-    
-    clear_btn.click(lambda: ([], "", gr.update(value=None), "", gr.update(visible=False)), [], [chatbot, system_prompt, prompt_radio, summary_box, rag_column])
+
+    clear_btn.click(
+        lambda: ([], "", gr.update(value=None), "", gr.update(visible=False)),
+        [],
+        [chatbot, system_prompt, prompt_radio, summary_box, rag_column],
+    )
     summarize_btn.click(
         summarize_conversation,
         [chatbot, llm_name, task_config, system_prompt, temp, top_p, max_tokens],
@@ -674,7 +764,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
             summary_box,
             text_llm_name,
             rag_params_accordion,
-        ]
+        ],
     ).then(
         update_llm_choices,
         [task_config, audio_qa_mode],
@@ -709,41 +799,21 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         lambda: gr.update(visible=True), None, [prompt_panel]
     )
     close_prompt_btn.click(lambda: gr.update(visible=False), None, [prompt_panel])
-    prompt_radio.change(
-        load_system_prompt_preview,
-        [prompt_radio],
-        [prompt_preview]
-    )
-    confirm_prompt_btn.click(
-        load_system_prompt_confirm,
-        [prompt_radio],
-        [system_prompt, prompt_panel]
-    )
+    prompt_radio.change(load_system_prompt_preview, [prompt_radio], [prompt_preview])
+    confirm_prompt_btn.click(load_system_prompt_confirm, [prompt_radio], [system_prompt, prompt_panel])
 
     save_prompt_btn.click(save_system_prompt, [system_prompt], [prompt_radio])
     save_btn.click(store_history, [chatbot, system_prompt], [history_radio])
     load_history_btn.click(lambda: gr.update(visible=True), None, [history_panel])
     close_history_btn.click(lambda: gr.update(visible=False), None, [history_panel])
-    history_radio.change(
-        load_history_preview,
-        [history_radio],
-        [history_preview]
-    )
-    confirm_history_btn.click(
-        load_history_confirm,
-        [history_radio],
-        [chatbot, system_prompt, history_panel]
-    )
-    
-    chatbot.like(
-        show_feedback, 
-        inputs=[], 
-        outputs=[additional_feedback, user_binary_feedback]
-    )
+    history_radio.change(load_history_preview, [history_radio], [history_preview])
+    confirm_history_btn.click(load_history_confirm, [history_radio], [chatbot, system_prompt, history_panel])
+
+    chatbot.like(show_feedback, inputs=[], outputs=[additional_feedback, user_binary_feedback])
     user_additional_feedback_submit.click(
         save_feedback,
         [user_binary_feedback, chatbot, system_prompt, context_html, llm_name, user_additional_feedback],
-        [additional_feedback]
+        [additional_feedback],
     )
 
     # --- Ingestion Events ---
@@ -751,19 +821,29 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     run_ingestion.click(
         validate_ingestion_inputs,
         [index_name_ing, embed_name, upload_btt, chunk_length, percentile, retrievers_radio_ing],
-        None
-    ).success(
-        lambda: gr.update(value="Ingesting...", visible=True), None, [ingestion_status]
-    ).then(
+        None,
+    ).success(lambda: gr.update(value="Ingesting...", visible=True), None, [ingestion_status]).then(
         perform_ingest,
-        [index_name_ing, chunk_length, percentile, embed_name, uploaded_doc_ing, splitting_strategy, retrievers_radio_ing],
-        None
+        [
+            index_name_ing,
+            chunk_length,
+            percentile,
+            embed_name,
+            uploaded_doc_ing,
+            splitting_strategy,
+            retrievers_radio_ing,
+        ],
+        None,
     ).then(
         lambda: gr.update(value="Success!", visible=True), None, [ingestion_status]
     )
 
-    filter_column.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
-    filter_value.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
+    filter_column.change(
+        process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value]
+    )
+    filter_value.change(
+        process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value]
+    )
 
     # Toggle configuration panel visibility (JS-based so button stays visible)
     toggle_config_btn.click(
@@ -794,7 +874,7 @@ app = gr.mount_gradio_app(
 )
 
 if __name__ == "__main__":
-    import uvicorn
+
     port = int(os.environ.get("GRADIO_SERVER_PORT", 8080))
     uvicorn.run(
         "gradio_app.app:app",
