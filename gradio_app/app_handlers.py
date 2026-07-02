@@ -15,26 +15,32 @@ from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.task_handlers import get_task_handler
 from gradio_app.backend.query_llm import LLMHandler
-from gradio_app.helpers import replace_doc_links, _load_json, _save_json, remove_html_tags, extract_docs_from_rendered_template, _get_user_filepath, check_llm_interface
+from gradio_app.helpers import (
+    replace_doc_links,
+    _load_json,
+    _save_json,
+    remove_html_tags,
+    extract_docs_from_rendered_template,
+    _get_user_filepath,
+    check_llm_interface,
+)
+from dialog_manager.client import DialogClient
 from retrievers.client import RetrieverClient
 from settings import settings, USER_FEEDBACK_FILE, USER_HISTORY_FILE, USER_PROMPTS_FILE, USER_RETRIEVERS_FILE
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-dynamic_data = {
-    "retriever_instance": None,
-    "feedback_df": None,
-    "audio_buffer": []
-}
+dynamic_data = {"retriever_instance": None, "feedback_df": None, "audio_buffer": [], "dialog_client": None}
 with open(settings.MODELS_PATH) as f:
     available_llms = json.load(f)
     available_llms = {model["display_name"]: model for model in available_llms}
 llm_handler = LLMHandler(available_llms)
 
 # --- Jinja2 Templates ---
-env = Environment(loader=FileSystemLoader('gradio_app/templates'))
-context_template = env.get_template('context_template.j2')
-context_html_template = env.get_template('context_html_template.j2')
+env = Environment(loader=FileSystemLoader("gradio_app/templates"))
+context_template = env.get_template("context_template.j2")
+context_html_template = env.get_template("context_html_template.j2")
+
 
 def perform_ingest(
     index_name: str,
@@ -53,7 +59,7 @@ def perform_ingest(
         raise gr.Error("You must upload at least one file.")
     if isinstance(file_paths, str):
         file_paths = file_paths.split(",")
-    
+
     gr.Info("Ingesting documents...")
     retriever = RetrieverClient(endpoint=retriever_address)
     uploaded_files = []
@@ -64,7 +70,7 @@ def perform_ingest(
             uploaded_files.append(src_path)
         else:
             uploaded_files.append(os.path.join(settings.GENERIC_UPLOAD, os.path.basename(src_path)))
-    
+
     try:
         retriever.create_vs(
             uploaded_files,
@@ -129,25 +135,110 @@ def load_task(task_config):
         )
 
 
-def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_name, task_config, retriever_instance, **kwargs):
+# do not need it, it is initialized at app.py
+# def initialize_dialog_client():
+#     """Initialize the dialog client with configured endpoint."""
+#     if dynamic_data.get("dialog_client") is None:
+#         dynamic_data["dialog_client"] = DialogClient(endpoint=settings.DM_ENDPOINT)
+#     return dynamic_data["dialog_client"]
+
+
+def _process_llm_dm_request(
+    llm_name, system_prompt, history, query, docs_k, index_name, task_config, dm_instance, retriever_instance, **kwargs
+):
     """
     Core generator function to handle LLM requests. Yields response parts and documents.
     This is the central logic used by both Gradio and FastAPI.
     """
     task_handler = get_task_handler(task_config, llm_handler, retriever_instance)
-    
+
+    if not query and not kwargs.get("audio"):
+        raise ValueError("Empty query submitted.")
+
+    # check if dialog manager should handle this request
+    use_dialog_manager = kwargs.get("use_dialog_manager", False)
+    session_id = kwargs.get("session_id", "default")
+
+    if use_dialog_manager:
+        # Use Dialog Manager
+        # dialog_client = initialize_dialog_client()
+        history = history or []
+
+        # Convert Gradio history format to DialogManager format
+        dialog_history = []
+        for user_msg, assistant_msg in history:
+            if user_msg and user_msg.strip():
+                dialog_history.append({"role": "user", "content": user_msg})
+            if assistant_msg and assistant_msg.strip():
+                dialog_history.append({"role": "assistant", "content": assistant_msg})
+
+        # Get response from dialog manager
+        response = dm_instance.process(user_input=query, dialog_history=dialog_history, session_id=session_id)
+
+        if response.get("error"):
+            # Fallback to regular LLM if dialog manager fails
+            logger.warning(f"Dialog manager failed: {response.get('error')}. Falling back to regular LLM.")
+            return _process_llm_request(
+                llm_name, system_prompt, history, query, docs_k, index_name, task_config, retriever_instance, **kwargs
+            )
+
+        # Format response for Gradio
+        response_text = response.get("response", "I'm sorry, I couldn't process that.")
+        entities = response.get("entities", {})
+        category = response.get("category")
+        terminated = response.get("terminated", False)
+        turn_count = response.get("turn_count", 0)
+
+        # Update history
+        history = history or []
+        history.append([query, response_text])
+
+        # Format entities as documents for display
+        documents = []
+        if entities:
+            entity_text = "### Extracted Entities\n"
+            for entity_type, values in entities.items():
+                entity_text += f"- **{entity_type}**: {', '.join(values)}\n"
+            documents.append(entity_text)
+
+        if category:
+            documents.append(f"**Category**: {category}")
+            documents.append(f"**Turn Count**: {turn_count}")
+
+        if terminated:
+            documents.append("**Conversation completed** - Thank you, a doctor will be with you shortly.")
+
+        # Yield the response
+        yield history, documents
+        return
+
+    # no DM LLM processing
+    yield from _process_llm_request(
+        llm_name, system_prompt, history, query, docs_k, index_name, task_config, retriever_instance, **kwargs
+    )
+
+
+def _process_llm_request(
+    llm_name, system_prompt, history, query, docs_k, index_name, task_config, retriever_instance, **kwargs
+):
+    """
+    Core generator function to handle LLM requests. Yields response parts and documents.
+    This is the central logic used by both Gradio and FastAPI.
+    """
+    task_handler = get_task_handler(task_config, llm_handler, retriever_instance)
+
     if not query and not kwargs.get("audio"):
         raise ValueError("Empty query submitted.")
 
     history = history + [[query, ""]]
-    
+
     # Extract audio data and language if present in kwargs
     audio_data = kwargs.get("audio")
     language = kwargs.get("language")
     render_doc_links = kwargs.get("render_doc_links", True)
     metadata_sink = kwargs.get("metadata_sink")
 
-    logger.info('Starting LLM stream and document retrieval...')
+    logger.info("Starting LLM stream and document retrieval...")
     stream = task_handler(
         llm_name,
         system_prompt,
@@ -159,7 +250,7 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
         top_p=kwargs.get("top_p", 0.95),
         max_tokens=kwargs.get("max_tokens", 300),
         audio=audio_data,
-        language=language
+        language=language,
     )
 
     for stream_item in stream:
@@ -192,24 +283,30 @@ def upload_file_for_ingest(files: List[str]) -> gr.update:
         out_files.append(os.path.basename(file_path.name))
     return gr.update(value=", ".join(out_files))
 
+
 def validate_ingestion_inputs(index_name, embedder, files, chunk_length, percentile, retriever_addr):
     """Validates all inputs on the Ingestion tab before starting the process."""
     if not all([index_name, embedder, files, retriever_addr]):
-        raise gr.Error("Please fill all required fields: Index Name, Embedder, Vector Store, and upload at least one file.")
-    
+        raise gr.Error(
+            "Please fill all required fields: Index Name, Embedder, Vector Store, and upload at least one file."
+        )
+
     for f in files:
         if not any(f.name.endswith(suff) for suff in settings.SUPPORTED_FILE_TYPES):
             raise gr.Error(f"File '{os.path.basename(f.name)}' has an unsupported file type.")
 
     try:
-        if not 0 < int(chunk_length) <= 2000: raise ValueError()
+        if not 0 < int(chunk_length) <= 2000:
+            raise ValueError()
     except ValueError:
         raise gr.Error("'Chunk Length' must be an integer between 1 and 2000.")
-    
+
     try:
-        if not 0 < int(percentile) <= 100: raise ValueError()
+        if not 0 < int(percentile) <= 100:
+            raise ValueError()
     except ValueError:
         raise gr.Error("'Percentile' must be an integer between 1 and 100.")
+
 
 # --- Playground Tab ---
 def get_dynamic_components(request: gr.Request) -> tuple:
@@ -222,23 +319,25 @@ def get_dynamic_components(request: gr.Request) -> tuple:
     if retrievers:
         dynamic_data["retriever_instance"] = RetrieverClient(endpoint=list(retrievers.values())[0])
     online_choices, _ = _get_online_models(llm_handler.available_llms)
-    
+
     return (
         task_configs_radio,
         _get_prompts(user),
         _get_historical_prompts(user),
         online_choices,
         retrievers_radio,
-        retrievers_radio, # For both Playground and Ingestion tabs
+        retrievers_radio,  # For both Playground and Ingestion tabs
         feedback_df,
-        avail_cols
+        avail_cols,
     )
+
 
 def change_retriever(selected_retr_endpoint: str) -> gr.Radio:
     """Updates the available indexes when a different Vector Store is selected."""
     dynamic_data["retriever_instance"] = RetrieverClient(endpoint=selected_retr_endpoint)
     choices = dynamic_data["retriever_instance"].list_vs()
     return gr.Radio(label="Index name", choices=choices)
+
 
 def save_system_prompt(request: gr.Request, system_prompt: str):
     """Saves a new system prompt for the current user."""
@@ -256,6 +355,7 @@ def save_system_prompt(request: gr.Request, system_prompt: str):
     # To refresh the dropdown, we would need to return a new gr.Dropdown object
     # For simplicity, user needs to reload to see the new prompt.
 
+
 def store_history(request: gr.Request, history: List[List[str]], system_prompt: str):
     """Saves the current conversation history for the user."""
     filepath = _get_user_filepath(request.username, USER_HISTORY_FILE)
@@ -268,12 +368,13 @@ def store_history(request: gr.Request, history: List[List[str]], system_prompt: 
     if prompt_snippet:
         prompt_snippet = prompt_snippet.replace("\n", " ")[:30]
     else:
-        prompt_snippet = (first_user_msg[:30] if first_user_msg else "Untitled")
+        prompt_snippet = first_user_msg[:30] if first_user_msg else "Untitled"
     log_name = f"{date_str} - {prompt_snippet} ({len(history)} turns)"
     logs.append({"history": history, "system_prompt": system_prompt, "name": log_name})
     _save_json(filepath, logs)
     gr.Info(f"History saved for user '{request.username}'.")
     return gr.update(choices=_build_history_choices(logs), value=None)
+
 
 def _build_history_choices(logs):
     choices = []
@@ -282,6 +383,7 @@ def _build_history_choices(logs):
         label = entry.get("name", f"History {idx + 1}")
         choices.append((label, str(idx)))
     return choices
+
 
 def _find_history_entry(logs, selected_log: str):
     if not selected_log:
@@ -304,6 +406,7 @@ def _find_history_entry(logs, selected_log: str):
             return entry
     return None
 
+
 def _find_prompt_entry(prompts, selected_log: str):
     if not selected_log:
         return None
@@ -325,6 +428,7 @@ def _find_prompt_entry(prompts, selected_log: str):
             return entry
     return None
 
+
 def _format_history_preview(history, system_prompt: str = "", max_turns: int = 6, max_chars: int = 2000) -> str:
     if not history:
         if system_prompt:
@@ -345,6 +449,7 @@ def _format_history_preview(history, system_prompt: str = "", max_turns: int = 6
         preview += "\n\n…"
     return preview[:max_chars]
 
+
 def load_history(request: gr.Request, selected_log: str):
     """Loads a saved conversation history for the user."""
     if not selected_log:
@@ -359,6 +464,7 @@ def load_history(request: gr.Request, selected_log: str):
     system_prompt = match.get("system_prompt", match.get("prompt", ""))
     return match.get("history", []), gr.update(value=system_prompt)
 
+
 def load_history_preview(request: gr.Request, selected_log: str):
     """Updates the preview for the selected history without loading it."""
     if not selected_log:
@@ -371,6 +477,7 @@ def load_history_preview(request: gr.Request, selected_log: str):
     system_prompt = match.get("system_prompt", match.get("prompt", ""))
     preview = _format_history_preview(match.get("history", []), system_prompt=system_prompt)
     return gr.update(value=preview)
+
 
 def load_history_confirm(request: gr.Request, selected_log: str):
     """Loads history after user confirmation and closes the history panel."""
@@ -386,6 +493,7 @@ def load_history_confirm(request: gr.Request, selected_log: str):
     system_prompt = match.get("system_prompt", match.get("prompt", ""))
     return match.get("history", []), gr.update(value=system_prompt), gr.update(visible=False)
 
+
 def load_system_prompt_preview(request: gr.Request, selected_log: str):
     """Updates the preview for the selected system prompt without applying it."""
     if not selected_log:
@@ -397,6 +505,7 @@ def load_system_prompt_preview(request: gr.Request, selected_log: str):
         return gr.update(value="")
     system_prompt = match.get("system_prompt", match.get("prompt", ""))
     return gr.update(value=system_prompt)
+
 
 def load_system_prompt_confirm(request: gr.Request, selected_log: str):
     """Loads a system prompt after user confirmation and closes the prompt panel."""
@@ -412,15 +521,21 @@ def load_system_prompt_confirm(request: gr.Request, selected_log: str):
     system_prompt = match.get("system_prompt", match.get("prompt", ""))
     return gr.update(value=system_prompt), gr.update(visible=False)
 
+
 def refresh_system_prompts(request: gr.Request):
     filepath = _get_user_filepath(request.username, USER_PROMPTS_FILE)
     prompts = _load_json(filepath, default=[])
     return gr.update(choices=_build_prompt_choices(prompts), value=None)
 
-def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config, audio_qa_mode=None, text_llm_name=None):
+
+def validate_interaction(
+    text, llm, top_k, temp, top_p, index_name, task_config, audio_qa_mode=None, text_llm_name=None
+):
     """Validates playground inputs before sending a query to the LLM."""
-    if not llm: raise gr.Error("Please select an LLM.")
-    if not task_config: raise gr.Error("Please select a Task Configuration.")
+    if not llm:
+        raise gr.Error("Please select an LLM.")
+    if not task_config:
+        raise gr.Error("Please select a Task Configuration.")
     task_config_dict = json.loads(task_config)
     if task_config_dict.get("interface") != "audio":
         if not text.strip():
@@ -431,14 +546,18 @@ def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config,
         if task_config_dict.get("audio_mode") == "qa" and audio_qa_mode == "whisper_llm":
             if not text_llm_name:
                 raise gr.Error("Please select a Text LLM for Whisper + LLM mode.")
-    
+
     if task_config_dict.get("RAG") and not index_name:
         raise gr.Error("An index must be selected for this RAG task.")
-    
+
     # Parameter validation
-    if not (isinstance(top_k, (int, float)) and 0 <= top_k <= 10): raise gr.Error("K must be a number between 0 and 10.")
-    if not (isinstance(temp, (int, float)) and 0 <= temp <= 2): raise gr.Error("Temperature must be between 0 and 2.")
-    if not (isinstance(top_p, (int, float)) and 0 <= top_p <= 1): raise gr.Error("Top-p must be between 0 and 1.")
+    if not (isinstance(top_k, (int, float)) and 0 <= top_k <= 10):
+        raise gr.Error("K must be a number between 0 and 10.")
+    if not (isinstance(temp, (int, float)) and 0 <= temp <= 2):
+        raise gr.Error("Temperature must be between 0 and 2.")
+    if not (isinstance(top_p, (int, float)) and 0 <= top_p <= 1):
+        raise gr.Error("Top-p must be between 0 and 1.")
+
 
 def summarize_conversation(history, llm_name, task_config_str, system_prompt, temp, top_p, max_tokens):
     """Generates a summary for the full chat history using the selected LLM."""
@@ -460,10 +579,7 @@ def summarize_conversation(history, llm_name, task_config_str, system_prompt, te
     if not conversation_text:
         raise gr.Error("No conversation to summarize.")
 
-    query = (
-        "Summarize the following conversation in a concise paragraph:\n\n"
-        f"{conversation_text}"
-    )
+    query = "Summarize the following conversation in a concise paragraph:\n\n" f"{conversation_text}"
 
     summary = ""
     stream = _process_llm_request(
@@ -486,6 +602,7 @@ def summarize_conversation(history, llm_name, task_config_str, system_prompt, te
 
     return summary
 
+
 def _collect_llm_response(response):
     if isinstance(response, str):
         return response
@@ -494,11 +611,26 @@ def _collect_llm_response(response):
     except TypeError:
         return str(response)
 
-def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str, language=None, audio_qa_mode=None, text_llm_name=None):
+
+def interact(
+    history,
+    input_text,
+    llm_name,
+    docs_k,
+    temp,
+    top_p,
+    max_tokens,
+    index_name,
+    system_prompt,
+    task_config_str,
+    language=None,
+    audio_qa_mode=None,
+    text_llm_name=None,
+):
     """Handles user interaction in the Gradio chat interface."""
     task_config = json.loads(task_config_str)
     history = history or []
-    
+
     # Handle audio interface if needed
     audio_in = None
     if task_config.get("interface") == "audio":
@@ -522,7 +654,12 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
                     )
                 )
                 input_text = transcription
-                task_config = {"interface": "text", "RAG": False, "service": "local", "name": "Audio QA (Whisper + LLM)"}
+                task_config = {
+                    "interface": "text",
+                    "RAG": False,
+                    "service": "local",
+                    "name": "Audio QA (Whisper + LLM)",
+                }
                 llm_name = text_llm_name
                 audio_in = None
             else:
@@ -531,11 +668,21 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
             input_text = "Transcribe and respond to the audio."
 
     stream = _process_llm_request(
-        llm_name, system_prompt, history, input_text, docs_k, index_name,
-        task_config, dynamic_data["retriever_instance"],
-        temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in, language=language
+        llm_name,
+        system_prompt,
+        history,
+        input_text,
+        docs_k,
+        index_name,
+        task_config,
+        dynamic_data["retriever_instance"],
+        temperature=temp,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        audio=audio_in,
+        language=language,
     )
-    
+
     for updated_history, documents in stream:
         documents_html = [markdown.markdown(d) for d in documents]
         context_html = context_html_template.render(documents=documents_html)
@@ -545,6 +692,7 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
             gr.update(visible=bool(task_config.get("RAG"))),
             gr.Textbox(value="", interactive=False),
         )
+
 
 # --- Feedback Tab ---
 def _load_feedback_df(force_reload: bool = False) -> pd.DataFrame:
@@ -558,13 +706,23 @@ def _load_feedback_df(force_reload: bool = False) -> pd.DataFrame:
     dynamic_data["feedback_df"] = df
     return df
 
+
 def _get_feedback_df():
     """Returns Gradio components for the feedback tab."""
     df = _load_feedback_df(force_reload=True)
     cols = ["None"] + list(df.columns) if not df.empty else ["None"]
     return gr.Dataframe(df, interactive=False), gr.Dropdown(label="Filter Columns", choices=cols, value="None")
 
-def save_feedback(request: gr.Request, binary_feedback: str, chatbot: List, system_prompt: str, rag_html: str, model_name: str, custom_feedback: str):
+
+def save_feedback(
+    request: gr.Request,
+    binary_feedback: str,
+    chatbot: List,
+    system_prompt: str,
+    rag_html: str,
+    model_name: str,
+    custom_feedback: str,
+):
     """Saves user feedback to the shared feedback file."""
     message = {
         "timestamp": datetime.datetime.now().isoformat(),
@@ -575,16 +733,17 @@ def save_feedback(request: gr.Request, binary_feedback: str, chatbot: List, syst
         "system_prompt": system_prompt,
         "retrieved_docs": extract_docs_from_rendered_template(rag_html),
         "generated_response": remove_html_tags(chatbot[-1][1]),
-        "full_history": [[remove_html_tags(msg) for msg in turn] for turn in chatbot]
+        "full_history": [[remove_html_tags(msg) for msg in turn] for turn in chatbot],
     }
-    
+
     filepath = os.path.join(settings.USER_WORKSPACES, USER_FEEDBACK_FILE)
     all_feedback = _load_json(filepath)
     all_feedback.append(message)
     _save_json(filepath, all_feedback)
-    
+
     gr.Info("Feedback saved. Thank you!")
     return gr.update(visible=False)
+
 
 # --- Dynamic Component Loaders (prefixed with '_get_') ---
 def _get_task_configs():
@@ -606,6 +765,7 @@ def _get_task_configs():
         default_value = configs[0][1]
     return gr.Radio(label="Task configuration", choices=configs, value=default_value), configs
 
+
 def _get_retrievers(user: str):
     with open(settings.RETRIEVER_CONFIG_PATH) as f:
         retrievers = json.load(f)
@@ -615,6 +775,7 @@ def _get_retrievers(user: str):
     print("RETRIEBERS", str(retrievers))
     return gr.Radio(label="Vector Store", choices=[(k, v) for k, v in retrievers.items()]), retrievers
 
+
 def _build_prompt_choices(prompts):
     choices = []
     for idx in range(len(prompts) - 1, -1, -1):
@@ -623,18 +784,26 @@ def _build_prompt_choices(prompts):
         choices.append((label, str(idx)))
     return choices
 
+
 def _get_prompts(user: str):
     filepath = _get_user_filepath(user, USER_PROMPTS_FILE)
     prompts = _load_json(filepath)
     return gr.Radio(label="Saved System Prompts", choices=_build_prompt_choices(prompts))
+
 
 def _get_historical_prompts(user: str):
     filepath = _get_user_filepath(user, USER_HISTORY_FILE)
     logs = _load_json(filepath)
     return gr.Radio(label="Saved Histories", choices=_build_history_choices(logs))
 
+
 def _get_online_models(available_llms):
-    probe_models = str(os.environ.get("ELOQ_PROBE_MODELS_ON_LOAD", "true")).strip().lower() in {"1", "true", "yes", "on"}
+    probe_models = str(os.environ.get("ELOQ_PROBE_MODELS_ON_LOAD", "true")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     def _build_silent_wav(sample_rate: int = 16000, duration_ms: int = 120) -> bytes:
         import io
@@ -662,16 +831,12 @@ def _get_online_models(available_llms):
         interactor = _interactor_name(model_name)
         try:
             if check_llm_interface(model_name, "text", available_llms=llm_handler.available_llms):
-                task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data.get("retriever_instance"))
+                task_handler = get_task_handler(
+                    settings.BASIC_CONFIG, llm_handler, dynamic_data.get("retriever_instance")
+                )
                 query = history_user_entry = "hello, say one random words"
                 history = [[history_user_entry, ""]]
-                for part, documents in task_handler(model_name,
-                                                    "",
-                                                    history,
-                                                    query,
-                                                    0,
-                                                    "index_name",
-                                                    max_tokens=2):
+                for part, documents in task_handler(model_name, "", history, query, 0, "index_name", max_tokens=2):
                     return True
                 return True
             elif check_llm_interface(model_name, "audio", available_llms=llm_handler.available_llms):
@@ -721,6 +886,7 @@ def _get_online_models(available_llms):
     default_model = online_choices[0][1] if online_choices else None
     return gr.Radio(label="Available LLMs", choices=online_choices, value=default_model), dynamic_data["online_llms"]
 
+
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     """Update LLM choices based on task interface."""
     task_config = json.loads(task_config_str) if task_config_str else {}
@@ -762,12 +928,16 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
 
     if interface == "audio" and audio_mode:
         if audio_mode == "transcription":
-            choices = [choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])]
+            choices = [
+                choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])
+            ]
         elif audio_mode == "diarization":
             choices = [choice for choice in choices if _is_whisperx_model(choice[1])]
         elif audio_mode == "qa":
             if audio_qa_mode == "whisper_llm":
-                choices = [choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])]
+                choices = [
+                    choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])
+                ]
             else:
                 choices = [
                     choice
@@ -777,6 +947,7 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
 
     default_value = choices[0][1] if choices else None
     return gr.update(choices=choices, value=default_value, visible=True)
+
 
 def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}
@@ -813,6 +984,7 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
     default_value = filtered_choices[0][1] if filtered_choices else None
     return gr.update(choices=filtered_choices, value=default_value, visible=True)
 
+
 def update_llm_params_visibility(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}
     interface = "audio" if task_config.get("interface") == "audio" else "text"
@@ -823,6 +995,7 @@ def update_llm_params_visibility(task_config_str: str, audio_qa_mode: str | None
     if interface == "audio" and audio_mode == "qa" and audio_qa_mode == "whisper_llm":
         return gr.update(visible=True)
     return gr.update(visible=False)
+
 
 def update_rag_params_visibility(task_config_str: str) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}

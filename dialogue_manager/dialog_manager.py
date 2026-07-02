@@ -115,18 +115,13 @@ class DialogManager:
         self.sessions = {}
         self._load_sessions()
 
-        # Setup LLM backend -> CHANGE it with BSC endpoint
+        # Setup LLM backend -> TODO CHANGE it with BSC endpoint
         OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11435")
         OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:12b")
 
-        self.llm = ChatOllama(
-            model=OLLAMA_MODEL,
-            base_url=OLLAMA_BASE_URL,
-            temperature=0,
-            num_predict=2048,
-        )
+        self.llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0, num_predict=2048)
 
-        # Load NER model
+        # Load NER model -> TODO CHANGE with the BSC located finetuned GLiNER
         self.ner_model = GLiNER.from_pretrained(
             "gliner2_finetuned_uns",
             load_tokenizer=True,
@@ -141,7 +136,7 @@ class DialogManager:
 
     def _init_prompts(self):
         """initialize prompt templates."""
-        # OOD Detection Prompt
+        ### OOD Detection Prompt
         self.ood_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -162,7 +157,7 @@ If off-topic, output "OFF". If on-topic, output "ON". Return only the word.
             ]
         )
 
-        # Category Detection Prompt
+        ### Category Detection Prompt
         self.category_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -208,7 +203,7 @@ Output rules:
             ]
         )
 
-        # Judge Prompt
+        ### Judge Prompt
         self.judge_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -248,7 +243,7 @@ Output JSON:""",
             ]
         )
 
-        # Summary Prompt
+        ### Summary Prompt
         self.summary_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -266,7 +261,7 @@ The summary should be in plain English, about 3-5 sentences, and ready to be rea
         )
 
     def _build_workflow(self):
-        """Build the LangGraph workflow."""
+        """Build the LangGraph workflow by defining the seuqence of states (nodes) and transitions (edges)"""
         workflow = StateGraph(DialogState)
 
         workflow.add_node("get_input", self._get_user_input)
@@ -277,7 +272,6 @@ The summary should be in plain English, about 3-5 sentences, and ready to be rea
 
         workflow.set_entry_point("get_input")
         workflow.add_edge("get_input", "ood_detection")
-
         workflow.add_conditional_edges(
             "ood_detection", self._after_ood, {"update": "update_entities", "reask": "get_input"}
         )

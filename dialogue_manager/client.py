@@ -3,7 +3,7 @@ from typing import List, Dict, Optional, Any
 from settings import settings
 
 
-class DialogClient:
+class DMClient:
     def __init__(self, endpoint=None):
         if endpoint is None:
             endpoint = settings.DM_ENDPOINT

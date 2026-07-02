@@ -89,7 +89,7 @@ async def process_dialog(request: Request):
 
 @app.get("/state/{session_id}", response_model=SessionState)
 async def get_state(session_id: str):
-    """Get current dialog state for a session."""
+    """Get current dialog state"""
     state = dialog_manager.get_session_state(session_id)
     if state:
         return SessionState(
@@ -127,10 +127,10 @@ async def end_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "session_count": dialog_manager.get_session_count()}
+# @app.get("/health")
+# async def health_check():
+#     """Health check endpoint."""
+#     return {"status": "healthy", "session_count": dialog_manager.get_session_count()}
 
 
 if __name__ == "__main__":

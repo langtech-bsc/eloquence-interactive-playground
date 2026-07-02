@@ -17,12 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from gradio_app.helpers import extract_docs_from_rendered_template
 from gradio_app.messages import *
 
-from dialog_manager.client import DialogClient  ### <--- ADDED TODO init DM session
+from dialog_manager.client import DMClient  ### <--- ADDED TODO init DM session
 
 from retrievers.client import RetrieverClient
 from settings import settings, normalize_path_prefix
 from gradio_app.app_handlers import (
     _get_task_configs,
+    _process_llm_dm_request,
     _process_llm_request,
     validate_interaction,
     interact,
@@ -234,6 +235,9 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
     task_config = task_configs.get(kwargs.get("task_config"), settings.BASIC_CONFIG)
 
+    dm_address = kwargs.get("dm_address", settings.DM_ENDPOINT)
+    dm_instance = DMClient(endpoint=dm_address)
+
     retriever_address = kwargs.get("retriever_address", settings.RETRIEVER_ENDPOINT)
     retriever_instance = RetrieverClient(endpoint=retriever_address)
 
@@ -253,7 +257,7 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
     metadata_sink = {}
     chunk_start_seconds = _to_float(kwargs.get("chunk_start_seconds"), 0.0)
 
-    stream = _process_llm_request(
+    stream = _process_llm_dm_request(
         kwargs["llm_name"],
         kwargs.get("system_prompt"),
         history,
@@ -261,6 +265,7 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
         kwargs.get("docs_k"),
         kwargs.get("index_name"),
         task_config,
+        dm_instance,
         retriever_instance,
         temperature=kwargs.get("temp"),
         top_p=kwargs.get("top_p"),
