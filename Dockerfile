@@ -13,6 +13,7 @@ RUN pip install torch torchvision torchaudio --index-url https://download.pytorc
 RUN pip install openai==1.102.0
 COPY . .
 
+EXPOSE 8080          
 EXPOSE 7860
 EXPOSE 7997
 ENV GRADIO_SERVER_NAME="0.0.0.0"
@@ -21,3 +22,4 @@ ENV PERSISTENT_DATA="/data"
 ENV RETRIEVER_ENDPOINT="http://0.0.0.0:7997"
 
 CMD ["bash", "run_script.sh"]
+

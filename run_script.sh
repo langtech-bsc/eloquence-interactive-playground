@@ -6,5 +6,5 @@ sleep 5
 python -m retrievers.retrieval_server &
 sleep 5
 
-export GRADIO_SERVER_PORT=8086;
+export GRADIO_SERVER_PORT=8080;
 python -m gradio_app.app
