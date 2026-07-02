@@ -1,0 +1,82 @@
+[
+    {
+        "model_name": "salamandra-7b-instruct",
+        "interactor": "salamandra",
+        "display_name": "Salamandra (HF)",
+        "api_key": "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",
+        "api_endpoint": "https://gg1brnpmx53zkhrg.eu-west-1.aws.endpoints.huggingface.cloud/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "whisper-large-v3",
+        "interactor": "whisper",
+        "display_name": "Whisper",
+        "api_key": "local-whisper",
+        "api_endpoint": "http://localhost:9080/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "large-v3",
+        "interactor": "whisperx",
+        "display_name": "WhisperX",
+        "api_key": "",
+        "api_endpoint": "http://localhost:9081/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "salamandra-7b-instruct",
+        "interactor": "salamandra",
+        "display_name": "Salamandra (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10005/v1/",
+        "interface": "text"
+    },
+    {
+        "model_name": "gemma-3-27b-it",
+        "interactor": "gemma",
+        "display_name": "Gemma 3 (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10007/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "gemma-4-31B-it",
+        "interactor": "gemma",
+        "display_name": "Gemma 4 (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10002/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "Apertus-8B-Instruct-2509",
+        "interactor": "apertus",
+        "display_name": "Apertus (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10003/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "Qwen2.5-Audio",
+        "interactor": "qwen",
+        "display_name": "Qwen2.5 (TID)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:10003/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "Scientist:latest",
+        "interactor": "sdialog",
+        "display_name": "Scientist:latest",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:1335/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "Mistral-Small-3.1-24B-Instruct-2503",
+        "interactor": "apertus",
+        "display_name": "Mistral Small 3.1 24B (BSC)",
+        "api_key": "",
+        "api_endpoint": "http://84.88.53.199:9102/v1",
+        "interface": "text"
+    }
+]

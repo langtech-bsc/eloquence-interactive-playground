@@ -21,6 +21,9 @@ def detect_audio_format(data: bytes) -> str:
         return "flac"
     elif data.startswith(b'ID3') or data[:2] == b'\xff\xfb':
         return "mp3"
+    elif len(data) > 12 and data[4:8] == b'ftyp':
+        # ISO Base Media (mp4/m4a); ffmpeg can autodetect with mp4
+        return "mp4"
     elif data.startswith(b'\x1A\x45\xDF\xA3'):
         # This could be WebM or Matroska; you'd need deeper parsing to confirm
         return "webm"
@@ -31,7 +34,11 @@ def detect_audio_format(data: bytes) -> str:
 
 
 def bytes_to_wav(audio_bytes, original_format):
-    audio = AudioSegment.from_file(BytesIO(audio_bytes), format=original_format)
+    # Let ffmpeg autodetect if format is unknown/None
+    if not original_format or original_format == "unknown":
+        audio = AudioSegment.from_file(BytesIO(audio_bytes))
+    else:
+        audio = AudioSegment.from_file(BytesIO(audio_bytes), format=original_format)
     wav_io = BytesIO()
     audio.export(wav_io, format="wav")
     return wav_io.getvalue()
@@ -114,4 +121,3 @@ def extract_docs_from_rendered_template(rendered_html: str) -> List[str]:
 def remove_html_tags(text: str) -> str:
     """Removes HTML tags and their content from a string."""
     return re.sub(r'<[^>]*>.*?</[^>]*>', '', text, flags=re.DOTALL)
-

@@ -17,15 +17,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from gradio_app.helpers import  extract_docs_from_rendered_template
 from gradio_app.messages import *
 from retrievers.client import RetrieverClient
-from settings import settings
+from settings import settings, normalize_path_prefix
 from gradio_app.app_handlers import (
     _get_task_configs,
     _process_llm_request,
     validate_interaction,
     interact,
     change_retriever,
-    save_prompt,
+    save_system_prompt,
+    load_system_prompt_preview,
+    load_system_prompt_confirm,
+    refresh_system_prompts,
     store_history,
+    load_history,
+    load_history_preview,
+    load_history_confirm,
+    summarize_conversation,
     save_feedback,
     upload_file_for_ingest,
     validate_ingestion_inputs,
@@ -35,12 +42,75 @@ from gradio_app.app_handlers import (
     _load_feedback_df,
     dynamic_data,
     llm_handler,
-    load_task
+    load_task,
+    update_llm_choices,
+    update_text_llm_choices,
+    update_llm_params_visibility,
+    update_rag_params_visibility,
 )
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class SubpathMiddleware:
+    def __init__(self, app, *, settings):
+        self.app = app
+        self.settings = settings
+
+    def _decode_headers(self, scope):
+        headers = {}
+        for name, value in scope.get("headers", []):
+            try:
+                header_name = name.decode("latin-1").lower()
+                header_value = value.decode("latin-1")
+            except UnicodeDecodeError:
+                continue
+            headers[header_name] = header_value
+        return headers
+
+    def _header_prefix(self, headers):
+        for header_name in self.settings.PATH_PREFIX_HEADERS:
+            header_value = headers.get(header_name)
+            if header_value:
+                normalized = normalize_path_prefix(header_value)
+                if normalized:
+                    return normalized
+        return ""
+
+    def _match_path_prefix(self, path: str) -> str:
+        for prefix in self.settings.PATH_PREFIXES:
+            if prefix and path.startswith(prefix):
+                return prefix
+        return ""
+
+    def _strip_prefix(self, scope, prefix: str):
+        path = scope.get("path", "")
+        stripped = path[len(prefix):]
+        if not stripped:
+            stripped = "/"
+        elif not stripped.startswith("/"):
+            stripped = f"/{stripped}"
+        scope["path"] = stripped
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = self._decode_headers(scope)
+        prefix = self._header_prefix(headers)
+        if not prefix:
+            prefix = self._match_path_prefix(scope.get("path", ""))
+        if not prefix:
+            prefix = normalize_path_prefix(self.settings.ROOT_PATH)
+
+        if prefix and scope.get("path", "").startswith(prefix):
+            self._strip_prefix(scope, prefix)
+
+        scope["root_path"] = prefix or ""
+        await self.app(scope, receive, send)
 
 def show_feedback(request: gr.Request, x: gr.LikeData):
     # This is currently not used:  x.index[0], x.index[1]
@@ -80,11 +150,69 @@ def authenticate(user: str, password: str) -> bool:
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(SubpathMiddleware, settings=settings)
+
+
+def _to_float(value, default=None):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_transcription_metadata(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> Optional[Dict[str, Any]]:
+    if not transcription_payload:
+        return None
+
+    segments = transcription_payload.get("segments") or []
+    if not segments:
+        return {
+            "chunk_start_seconds": chunk_start_seconds,
+            "start_time": chunk_start_seconds,
+            "end_time": chunk_start_seconds,
+        }
+
+    first_start = _to_float(segments[0].get("start"), 0.0)
+    last_end = _to_float(segments[-1].get("end"), first_start)
+
+    return {
+        "chunk_start_seconds": chunk_start_seconds,
+        "start_time": chunk_start_seconds + first_start,
+        "end_time": chunk_start_seconds + last_end,
+    }
+
+
+def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> List[Dict[str, Any]]:
+    if not transcription_payload:
+        return []
+
+    turns = []
+    for segment in transcription_payload.get("segments") or []:
+        if not isinstance(segment, dict):
+            continue
+
+        text = str(segment.get("text") or "").strip()
+        if not text:
+            continue
+
+        local_start = _to_float(segment.get("start"), 0.0)
+        local_end = _to_float(segment.get("end"), local_start)
+        turns.append({
+            "speaker": segment.get("speaker"),
+            "text": text,
+            "start_time": chunk_start_seconds + local_start,
+            "end_time": chunk_start_seconds + local_end,
+        })
+
+    return turns
+
 
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
     if kwargs["llm_name"] not in available_llms.keys():
-        return ResponseQueryLLM(text="", documents=[], error="Unknown LLM")
+        return "", [], [], None, []  # Return empty text and documents for unknown LLM
     
     _, task_configs_list = _get_task_configs()
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
@@ -98,29 +226,66 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
     audio_data = await audio_file.read() if audio_file else None
 
     if task_config.get("interface") == "audio" and audio_data:
-        query = "Describe the audio."
+        audio_mode = task_config.get("audio_mode")
+        if audio_mode == "transcription":
+            query = "Transcribe the audio."
+        elif audio_mode == "diarization":
+            query = "Diarize the audio."
+        else:
+            query = "Describe the audio."
     
+    metadata_sink = {}
+    chunk_start_seconds = _to_float(kwargs.get("chunk_start_seconds"), 0.0)
+
     stream = _process_llm_request(
         kwargs["llm_name"], kwargs.get("system_prompt"), history, query,
         kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
         temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
-        max_tokens=kwargs.get("max_tokens"), audio=audio_data
+        max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language"),
+        render_doc_links=kwargs.get("render_doc_links", True),
+        metadata_sink=metadata_sink
     )
     
     final_text = ""
     final_docs = []
+    final_docs_metadata = []
     for updated_history, docs in stream:
         final_text = updated_history[-1][1]
-        final_docs = [extract_docs_from_rendered_template(markdown.markdown(d)) for d in docs]
+        if docs:
+            final_docs = [d if isinstance(d, str) else str(d) for d in docs]
+        else:
+            final_docs = []
+        final_docs_metadata = metadata_sink.get("documents", [])
     
-    return final_text, final_docs
+    transcription_metadata = _build_transcription_metadata(
+        metadata_sink.get("transcription"),
+        chunk_start_seconds,
+    )
+    transcription_turns = _build_transcription_turns(
+        metadata_sink.get("transcription"),
+        chunk_start_seconds,
+    )
+
+    return final_text, final_docs, final_docs_metadata, transcription_metadata, transcription_turns
 
 
 @app.post("/stream")
 async def upload_audio_chunk(audio_chunk: UploadFile):
     """Accepts a streaming audio chunk and adds it to the buffer."""
     data = await audio_chunk.read()
+    logger.info("Audio chunk received: %d bytes", len(data))
     dynamic_data["audio_buffer"].extend(data)
+    return {"status": "ok", "size_received": len(data)}
+
+
+@app.post("/stream_finalize")
+async def upload_audio_final(audio_file: UploadFile):
+    """Accepts the final recording blob and replaces the buffer."""
+    data = await audio_file.read()
+    logger.info("Final audio received: %d bytes, content_type=%s", len(data), audio_file.content_type)
+    if not data:
+        return {"status": "error", "size_received": 0}
+    dynamic_data["audio_buffer"] = bytearray(data)
     return {"status": "ok", "size_received": len(data)}
 
 
@@ -128,10 +293,25 @@ async def upload_audio_chunk(audio_chunk: UploadFile):
 async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadFile] = File(None)):
     """Primary endpoint for submitting a single query to the LLM."""
     request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
-    response_text, documents = await query_llm_general(available_llms=llm_handler.available_llms, audio_file=audio_file, **request_data.model_dump())
-    if len(documents) < 2:
-        documents = []
-    return ResponseQueryLLM(text=response_text, documents=documents)
+    try:
+        response_text, documents, documents_metadata, transcription_metadata, transcription_turns = await query_llm_general(
+            available_llms=llm_handler.available_llms,
+            audio_file=audio_file,
+            **request_data.model_dump()
+        )
+        if len(documents) < 2:
+            documents = []
+            documents_metadata = []
+        return ResponseQueryLLM(
+            text=response_text,
+            documents=documents,
+            documents_metadata=documents_metadata,
+            transcription_metadata=transcription_metadata,
+            transcription_turns=transcription_turns,
+        )
+    except Exception as exc:
+        logger.exception("Query failed")
+        return ResponseQueryLLM(text="", documents=[], error=str(exc))
 
 
 @app.post("/batch_query", response_model=ResponseBatchQuery)
@@ -144,7 +324,7 @@ async def batch_query_endpoint(body: str = Form(...), data_file: UploadFile = Fi
     for conv_id, turns in batch_data.items():
         history = []
         for turn in turns:
-            response_text, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
+            response_text, _, _, _, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
             history.append([turn, response_text])
         processed_data[conv_id] = history
     
@@ -155,27 +335,36 @@ async def batch_query_endpoint(body: str = Form(...), data_file: UploadFile = Fi
 async def ingest_endpoint(content_file: UploadFile, body: str = Form(...)):
     """Handles document ingestion into a specified vector store."""
     request = TypeAdapter(RequestIngest).validate_json(body)
+    temp_file_path = None
     try:
         # Use a temporary file to safely handle the upload
-        with tempfile.NamedTemporaryFile(delete=False, suffix=content_file.filename) as tmp:
+        file_suffix = os.path.splitext(content_file.filename or "")[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix) as tmp:
             shutil.copyfileobj(content_file.file, tmp.file)
             temp_file_path = tmp.name
-
         # Call the same ingestion logic used by the UI
         perform_ingest(
             index_name=request.index_name,
             chunk_size=request.chunk_size,
             percentile=request.percentile,
             embed_name=request.embed_name,
-            file_paths=[os.path.basename(temp_file_path)], # Pass base name
+            file_paths=[temp_file_path],
             splitting_strategy=request.splitting_strategy,
-            retriever_address=request.retriever_address
+            retriever_address=request.retriever_address,
+            append=request.append,
+            snippet_metadata=request.snippet_metadata,
+            snippet_turns=request.snippet_turns,
         )
-        os.unlink(temp_file_path) # Clean up the temp file
         return ResponseIngest(status="success", msg="Document ingested successfully.")
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
         return ResponseIngest(status="error", msg=str(e))
+    finally:
+        if temp_file_path:
+            try:
+                os.unlink(temp_file_path)
+            except FileNotFoundError:
+                pass
 
 
 @app.get("/list_vs", response_model=ResponseList)
@@ -186,6 +375,20 @@ async def list_vector_stores(retriever_address: str = "public"):
     retriever = RetrieverClient(endpoint=retriever_address)
     stores = retriever.list_vs()
     return ResponseList(available=stores)
+
+
+@app.delete("/delete_vs", response_model=ResponseIngest)
+async def delete_vector_store(index_name: str, retriever_address: str = "public"):
+    """Deletes a specific Vector Store (index) by name."""
+    if retriever_address == "public":
+        retriever_address = settings.RETRIEVER_ENDPOINT
+    retriever = RetrieverClient(endpoint=retriever_address)
+    try:
+        retriever.delete_vs(index_name=index_name)
+        return ResponseIngest(status="success", msg=f"Index '{index_name}' deleted successfully.")
+    except Exception as exc:
+        logger.error(f"Delete failed for index '{index_name}': {exc}")
+        return ResponseIngest(status="error", msg=str(exc))
 
 
 @app.get("/list_llms", response_model=ResponseList)
@@ -255,51 +458,107 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     user_additional_feedback_submit = gr.Button("Submit Feedback")
                 
                 # Input UI
-                with gr.Row():
+                with gr.Row(elem_id="input_controls_row"):
                     with gr.Column(visible=True) as text_column:
                         input_textbox = gr.Textbox(
                             scale=3,
                             show_label=False,
                             container=False,
+                            placeholder="Type here anything... (Enter to send or click submit button)",
+                            elem_id="input_textbox",
                         )
                     with gr.Column(visible=False) as audio_column:
                         hidden_submit_btn = gr.Button(visible=False, elem_id="trigger_audio_submit")
                         html = """
-                        <button class="lg secondary  svelte-cmf5ev" onclick="startStreaming()">Start Streaming &#128266;</button>
-                        <button class="lg secondary  svelte-cmf5ev" onclick="stopStreaming();document.getElementById('trigger_audio_submit').click();">Stop Streaming</button>
-                        <p id="recordstatus">Recording stopped.</p>
+                        <div class="audio-controls">
+                            <div class="audio-record-buttons">
+                                <button class="lg secondary  svelte-cmf5ev" onclick="startStreaming()">Start Recording</button>
+                                <button class="lg secondary  svelte-cmf5ev" onclick="stopStreaming()">Stop Recording</button>
+                            </div>
+                            <div class="audio-playback">
+                                <audio id="recorded_audio" controls></audio>
+                            </div>
+                            <div id="recordstatus" class="audio-status"></div>
+                        </div>
                         """
 
                         audio_object = gr.HTML(html)
-                    # input_textbox = gr.Textbox(scale=4, show_label=False, placeholder="Type your message here...", container=False)
-                    submit_btn = gr.Button("Submit")
-                    clear_btn = gr.Button("Clear")
+                        language_dropdown = gr.Dropdown(
+                            label="Language",
+                            choices=[
+                                ("English", "en"),
+                                ("Spanish", "es"),
+                                ("Italian", "it"),
+                                ("Greek", "el"),
+                                ("Serbian", "sr"),
+                            ],
+                            value="en",
+                            visible=False
+                        )
+                    with gr.Column():
+                        with gr.Row(elem_id="submit_clear_row"):
+                            submit_btn = gr.Button("Submit", elem_id="submit_btn")
+                            clear_btn = gr.Button("Clear", elem_id="clear_btn")
+
+                with gr.Row(elem_id="summary_controls_row"):
+                    with gr.Column(scale=6, min_width=0):
+                        summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
+                    with gr.Column(scale=1, min_width=130, elem_id="summary_button_column"):
+                        summarize_btn = gr.Button("Summarize\nconversation", visible=False, elem_id="summarize_btn")
 
                 gr.Examples(examples, input_textbox)
 
             # RAG and settings column
-            with gr.Column(scale=1):
-                with gr.Accordion("Settings & Configuration", open=False):
-                    llm_name = gr.Radio(label='Available LLMs')
-                    task_config = gr.Radio(label="Task configuration")
-                    retrievers_radio = gr.Radio(label="Vector Store")
-                    index_name = gr.Radio(label="Index name")
-                    system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
-                    
-                    with gr.Row():
-                        selected_prompt = gr.Dropdown(label="Load Saved Prompt", interactive=True)
-                        save_prompt_btn = gr.Button("Save Prompt")
+            with gr.Column(scale=1, elem_id="config_panel") as config_column:
+                toggle_config_btn = gr.Button("⚙", elem_id="toggle_config_btn")
+                with gr.Column(elem_id="config_panel_body"):
+                    with gr.Accordion("Task & Model Selection", open=True):
+                        task_config = gr.Radio(label="Task configuration", elem_id="task_config")
+                        audio_qa_mode = gr.Radio(
+                            label="Audio QA Mode",
+                            choices=[("Whisper + LLM", "whisper_llm"), ("Speech LLM", "speech_llm")],
+                            visible=False,
+                            elem_id="audio_qa_mode",
+                        )
+                        llm_name = gr.Radio(label="Available LLMs", visible=False, elem_id="llm_name")
+                        text_llm_name = gr.Radio(label="Text LLM", visible=False, elem_id="text_llm_name")
+                        retrievers_radio = gr.Radio(label="Vector Store", visible=False)
+                        index_name = gr.Radio(label="Index name", visible=False)
 
+                    with gr.Accordion("Prompt Settings", open=False):
+                        system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
+
+                        with gr.Row():
+                            load_prompt_btn = gr.Button("Load System Prompt")
+                            save_prompt_btn = gr.Button("Save System Prompt")
+
+                        with gr.Row():
+                            load_history_btn = gr.Button("Load History")
+                            save_btn = gr.Button("Save History")
+                    
+                    with gr.Accordion("LLM Parameters", open=False, visible=False) as llm_params_accordion:
+                        temp = gr.Slider(0, 2, value=1.0, step=0.1, label="Temperature")
+                        top_p = gr.Slider(0, 1, value=0.95, step=0.05, label="Top P")
+                        max_tokens = gr.Slider(100, 4000, value=512, step=64, label="Max tokens")
+                    
+                    with gr.Accordion("RAG Parameters", open=False, visible=False) as rag_params_accordion:
+                        docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
+
+                with gr.Column(visible=False, elem_id="prompt_panel") as prompt_panel:
+                    gr.Markdown("### Select A System Prompt")
+                    prompt_radio = gr.Radio(label="Saved System Prompts", interactive=True, elem_id="prompt_radio")
+                    prompt_preview = gr.Textbox(label="Preview", lines=6, interactive=False)
                     with gr.Row():
-                        selected_logs = gr.Dropdown(label="Load History", interactive=True)
-                        select_log_btn = gr.Button("Load History")
-                        save_btn = gr.Button("Save History")
-                
-                with gr.Accordion("LLM Parameters", open=False):
-                    docs_k = gr.Slider(0, 10, value=5, step=1, label="Top K documents")
-                    temp = gr.Slider(0, 2, value=1.0, step=0.1, label="Temperature")
-                    top_p = gr.Slider(0, 1, value=0.95, step=0.05, label="Top P")
-                    max_tokens = gr.Slider(100, 4000, value=512, step=64, label="Max tokens")
+                        confirm_prompt_btn = gr.Button("Confirm")
+                        close_prompt_btn = gr.Button("Close")
+
+                with gr.Column(visible=False, elem_id="history_panel") as history_panel:
+                    gr.Markdown("### Select A History")
+                    history_radio = gr.Radio(label="Saved Histories", interactive=True, elem_id="history_radio")
+                    history_preview = gr.Textbox(label="Preview", lines=8, interactive=False)
+                    with gr.Row():
+                        confirm_history_btn = gr.Button("Confirm")
+                        close_history_btn = gr.Button("Close")
                 
                 # RAG context display
                 with gr.Column(visible=False) as rag_column:
@@ -344,30 +603,137 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         with gr.Row():
             feedback_df = gr.Dataframe()
 
+    gr.HTML(
+        '<div id="custom_project_footer">Interactive Playground UI developed in <a href="https://eloquenceai.eu/" target="_blank" rel="noopener noreferrer">EU Eloquence project</a></div>'
+    )
+
     demo.load(
         get_dynamic_components,
         [],
-        [task_config, selected_prompt, selected_logs, llm_name, retrievers_radio, retrievers_radio_ing, feedback_df, filter_column]
+        [task_config, prompt_radio, history_radio, llm_name, retrievers_radio, retrievers_radio_ing, feedback_df, filter_column]
     )
 
     # --- Playground Events ---
     submit_btn.click(
         validate_interaction,
-        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config],
+        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
         None
     ).success(
         interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config],
+        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [chatbot, context_html, rag_column, input_textbox]
+    ).then(
+        lambda: gr.update(interactive=True), None, [input_textbox]
+    )
+
+    input_textbox.submit(
+        validate_interaction,
+        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
+        None
+    ).success(
+        interact,
+        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [chatbot, context_html, rag_column, input_textbox]
+    ).then(
+        lambda: gr.update(interactive=True), None, [input_textbox]
+    )
+
+    hidden_submit_btn.click(
+        validate_interaction,
+        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
+        None
+    ).success(
+        interact,
+        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
         [chatbot, context_html, rag_column, input_textbox]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
     
-    clear_btn.click(lambda: ([], "", None, gr.update(visible=False)), [], [chatbot, system_prompt, selected_prompt, rag_column])
+    clear_btn.click(lambda: ([], "", gr.update(value=None), "", gr.update(visible=False)), [], [chatbot, system_prompt, prompt_radio, summary_box, rag_column])
+    summarize_btn.click(
+        summarize_conversation,
+        [chatbot, llm_name, task_config, system_prompt, temp, top_p, max_tokens],
+        [summary_box],
+    )
     retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
-    task_config.change(load_task, [task_config], [text_column, audio_column, submit_btn])
-    save_prompt_btn.click(save_prompt, [system_prompt], None)
-    save_btn.click(store_history, [chatbot, system_prompt], None)
+    task_config.change(
+        load_task,
+        [task_config],
+        [
+            text_column,
+            audio_column,
+            submit_btn,
+            language_dropdown,
+            llm_params_accordion,
+            audio_qa_mode,
+            retrievers_radio,
+            index_name,
+            rag_column,
+            summarize_btn,
+            summary_box,
+            text_llm_name,
+            rag_params_accordion,
+        ]
+    ).then(
+        update_llm_choices,
+        [task_config, audio_qa_mode],
+        [llm_name],
+    ).then(
+        update_text_llm_choices,
+        [task_config, audio_qa_mode],
+        [text_llm_name],
+    ).then(
+        update_llm_params_visibility,
+        [task_config, audio_qa_mode],
+        [llm_params_accordion],
+    ).then(
+        update_rag_params_visibility,
+        [task_config],
+        [rag_params_accordion],
+    )
+    audio_qa_mode.change(
+        update_llm_choices,
+        [task_config, audio_qa_mode],
+        [llm_name],
+    ).then(
+        update_text_llm_choices,
+        [task_config, audio_qa_mode],
+        [text_llm_name],
+    ).then(
+        update_llm_params_visibility,
+        [task_config, audio_qa_mode],
+        [llm_params_accordion],
+    )
+    load_prompt_btn.click(refresh_system_prompts, [], [prompt_radio]).then(
+        lambda: gr.update(visible=True), None, [prompt_panel]
+    )
+    close_prompt_btn.click(lambda: gr.update(visible=False), None, [prompt_panel])
+    prompt_radio.change(
+        load_system_prompt_preview,
+        [prompt_radio],
+        [prompt_preview]
+    )
+    confirm_prompt_btn.click(
+        load_system_prompt_confirm,
+        [prompt_radio],
+        [system_prompt, prompt_panel]
+    )
+
+    save_prompt_btn.click(save_system_prompt, [system_prompt], [prompt_radio])
+    save_btn.click(store_history, [chatbot, system_prompt], [history_radio])
+    load_history_btn.click(lambda: gr.update(visible=True), None, [history_panel])
+    close_history_btn.click(lambda: gr.update(visible=False), None, [history_panel])
+    history_radio.change(
+        load_history_preview,
+        [history_radio],
+        [history_preview]
+    )
+    confirm_history_btn.click(
+        load_history_confirm,
+        [history_radio],
+        [chatbot, system_prompt, history_panel]
+    )
     
     chatbot.like(
         show_feedback, 
@@ -399,9 +765,41 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     filter_column.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
     filter_value.change(process_filter_value_change, [filter_column, filter_value], [feedback_df, download_feedback, filter_value])
 
-app = gr.mount_gradio_app(app, demo, path="/", auth=authenticate)
+    # Toggle configuration panel visibility (JS-based so button stays visible)
+    toggle_config_btn.click(
+        None,
+        [],
+        [],
+        js="""
+        () => {
+            const body = document.getElementById('config_panel_body');
+            const panel = document.getElementById('config_panel');
+            if (!body) return;
+            const isHidden = body.style.display === 'none';
+            body.style.display = isHidden ? '' : 'none';
+            if (panel) {
+                panel.style.minWidth = isHidden ? '' : '56px';
+                panel.style.flex = isHidden ? '' : '0 0 56px';
+            }
+        }
+        """,
+    )
+
+app = gr.mount_gradio_app(
+    app,
+    demo,
+    path="/",
+    auth=authenticate,
+    root_path=settings.ROOT_PATH,
+)
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("GRADIO_SERVER_PORT", 8080))
-    uvicorn.run("gradio_app.app:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(
+        "gradio_app.app:app",
+        host="0.0.0.0",
+        port=port,
+        root_path=settings.ROOT_PATH,
+        reload=True,
+    )

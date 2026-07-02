@@ -137,11 +137,16 @@ class ChatGptInteractor:
             return self._generator(completion)
 
         t2 = time.time()
-        usage = completion.usage
-        logger.info(
-            f'Received response: {usage.prompt_tokens} in + {usage.completion_tokens} out'
-            f' = {usage.total_tokens} total tokens. Time: {t2 - t1:3.1f} seconds'
-        )
+        usage = getattr(completion, "usage", None)
+        if usage is not None:
+            logger.info(
+                f'Received response: {usage.prompt_tokens} in + {usage.completion_tokens} out'
+                f' = {usage.total_tokens} total tokens. Time: {t2 - t1:3.1f} seconds'
+            )
+        else:
+            logger.info(
+                f"Received response without token usage metadata. Time: {t2 - t1:3.1f} seconds"
+            )
         return completion.choices[0].message.content
 
     @staticmethod
@@ -223,4 +228,3 @@ if __name__ == '__main__':
     for part in cgi.chat_completion_simple(user_text=ut, system_text=st):
         print(part, end='')
     print('\n---')
-

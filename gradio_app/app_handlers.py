@@ -2,8 +2,9 @@ import shutil
 import datetime
 import os
 import json
-from typing import List
+from typing import Any, Dict, List, Optional
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
 
@@ -35,7 +36,18 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name: str, file_paths: List[str], splitting_strategy: str, retriever_address: str):
+def perform_ingest(
+    index_name: str,
+    chunk_size: int,
+    percentile: int,
+    embed_name: str,
+    file_paths: List[str],
+    splitting_strategy: str,
+    retriever_address: str,
+    append: bool = False,
+    snippet_metadata: Optional[Dict[str, Any]] = None,
+    snippet_turns: Optional[List[Dict[str, Any]]] = None,
+):
     """Handles the document ingestion process."""
     if not file_paths:
         raise gr.Error("You must upload at least one file.")
@@ -44,27 +56,77 @@ def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name
     
     gr.Info("Ingesting documents...")
     retriever = RetrieverClient(endpoint=retriever_address)
-    uploaded_files = [os.path.join(settings.GENERIC_UPLOAD, os.path.basename(fp)) for fp in file_paths]
+    uploaded_files = []
+    for fp in file_paths:
+        src_path = fp.name if hasattr(fp, "name") else str(fp)
+        src_path = src_path.strip()
+        if os.path.isabs(src_path) and os.path.exists(src_path):
+            uploaded_files.append(src_path)
+        else:
+            uploaded_files.append(os.path.join(settings.GENERIC_UPLOAD, os.path.basename(src_path)))
     
-    retriever.create_vs(
-        uploaded_files,
-        chunk_size,
-        percentile,
-        embed_name,
-        index_name,
-        splitting_strategy
-    )
-    
-    shutil.rmtree(settings.GENERIC_UPLOAD, ignore_errors=True)
+    try:
+        retriever.create_vs(
+            uploaded_files,
+            chunk_size,
+            percentile,
+            embed_name,
+            index_name,
+            splitting_strategy,
+            append=append,
+            metadata=snippet_metadata,
+            turns=snippet_turns,
+        )
+    finally:
+        generic_root = os.path.abspath(settings.GENERIC_UPLOAD)
+        for uploaded_file in uploaded_files:
+            abs_uploaded = os.path.abspath(uploaded_file)
+            in_generic_root = abs_uploaded == generic_root or abs_uploaded.startswith(generic_root + os.sep)
+            if in_generic_root and os.path.isfile(abs_uploaded):
+                try:
+                    os.unlink(abs_uploaded)
+                except OSError:
+                    pass
     gr.Info("Ingestion successful!")
 
 
 def load_task(task_config):
     task_config = json.loads(task_config)
+    rag_enabled = task_config.get("name") == "RAG"
+    is_summarization = task_config.get("name") == "Summarization"
+    audio_mode = task_config.get("audio_mode")
     if task_config["interface"] == "audio":
-        return gr.update(visible=False), gr.update(visible=True), gr.update(interactive=False)
+        return (
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(interactive=True),
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(visible=audio_mode == "qa", value="whisper_llm" if audio_mode == "qa" else None),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=is_summarization),
+            gr.update(visible=is_summarization),
+            gr.update(visible=False),
+            gr.update(visible=rag_enabled),
+        )
     else:
-        return gr.update(visible=True), gr.update(visible=False), gr.update(interactive=True)
+        return (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(interactive=True),
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(visible=False, value=None),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=is_summarization),
+            gr.update(visible=is_summarization),
+            gr.update(visible=False),
+            gr.update(visible=rag_enabled),
+        )
 
 
 def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_name, task_config, retriever_instance, **kwargs):
@@ -74,13 +136,16 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
     """
     task_handler = get_task_handler(task_config, llm_handler, retriever_instance)
     
-    if not query:
+    if not query and not kwargs.get("audio"):
         raise ValueError("Empty query submitted.")
 
     history = history + [[query, ""]]
     
-    # Extract audio data if present in kwargs
+    # Extract audio data and language if present in kwargs
     audio_data = kwargs.get("audio")
+    language = kwargs.get("language")
+    render_doc_links = kwargs.get("render_doc_links", True)
+    metadata_sink = kwargs.get("metadata_sink")
 
     logger.info('Starting LLM stream and document retrieval...')
     stream = task_handler(
@@ -93,12 +158,26 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
         temperature=kwargs.get("temperature", 1.0),
         top_p=kwargs.get("top_p", 0.95),
         max_tokens=kwargs.get("max_tokens", 300),
-        audio=audio_data
+        audio=audio_data,
+        language=language
     )
 
-    for part, documents in stream:
+    for stream_item in stream:
+        if len(stream_item) == 3:
+            part, documents, documents_metadata = stream_item
+        else:
+            part, documents = stream_item
+            documents_metadata = []
+
+        if metadata_sink is not None:
+            metadata_sink["documents"] = documents_metadata
+        if isinstance(part, dict):
+            if metadata_sink is not None:
+                metadata_sink["transcription"] = part
+            part = part.get("text", "")
         history[-1][1] += part
-        history[-1][1] = replace_doc_links(history[-1][1])
+        if render_doc_links:
+            history[-1][1] = replace_doc_links(history[-1][1])
         yield history, documents
 
 
@@ -138,7 +217,10 @@ def get_dynamic_components(request: gr.Request) -> tuple:
     user = request.username
     feedback_df, avail_cols = _get_feedback_df()
     task_configs_radio, _ = _get_task_configs()
-    retrievers_radio, _ = _get_retrievers(user)
+    retrievers_radio, retrievers = _get_retrievers(user)
+    # Set default retriever instance
+    if retrievers:
+        dynamic_data["retriever_instance"] = RetrieverClient(endpoint=list(retrievers.values())[0])
     online_choices, _ = _get_online_models(llm_handler.available_llms)
     
     return (
@@ -158,35 +240,198 @@ def change_retriever(selected_retr_endpoint: str) -> gr.Radio:
     choices = dynamic_data["retriever_instance"].list_vs()
     return gr.Radio(label="Index name", choices=choices)
 
-def save_prompt(request: gr.Request, prompt: str):
+def save_system_prompt(request: gr.Request, system_prompt: str):
     """Saves a new system prompt for the current user."""
-    if not prompt:
-        gr.Warning("Cannot save an empty prompt.")
-        return
+    if not system_prompt:
+        gr.Warning("Cannot save an empty system prompt.")
+        return gr.update()
     filepath = _get_user_filepath(request.username, USER_PROMPTS_FILE)
     prompts = _load_json(filepath)
-    prompts.append({"name": f"{prompt[:20]}...", "prompt": prompt})
+    prompt_snippet = system_prompt.strip().replace("\n", " ")
+    name = f"{datetime.date.today().isoformat()} - {prompt_snippet[:30] if prompt_snippet else 'Untitled'}"
+    prompts.append({"name": name, "system_prompt": system_prompt})
     _save_json(filepath, prompts)
-    gr.Info("Prompt saved successfully!")
+    gr.Info("System prompt saved successfully!")
+    return gr.update(choices=_build_prompt_choices(prompts), value=None)
     # To refresh the dropdown, we would need to return a new gr.Dropdown object
     # For simplicity, user needs to reload to see the new prompt.
 
-def store_history(request: gr.Request, history: List[List[str]], prompt: str):
+def store_history(request: gr.Request, history: List[List[str]], system_prompt: str):
     """Saves the current conversation history for the user."""
     filepath = _get_user_filepath(request.username, USER_HISTORY_FILE)
     logs = _load_json(filepath)
-    log_name = f"{datetime.date.today()} - {prompt[:15] if prompt else history[0][0][:15]}..."
-    logs.append({"history": history, "prompt": prompt, "name": log_name})
+    date_str = datetime.date.today().isoformat()
+    first_user_msg = ""
+    if history and history[0]:
+        first_user_msg = (history[0][0] or "").strip()
+    prompt_snippet = (system_prompt or "").strip()
+    if prompt_snippet:
+        prompt_snippet = prompt_snippet.replace("\n", " ")[:30]
+    else:
+        prompt_snippet = (first_user_msg[:30] if first_user_msg else "Untitled")
+    log_name = f"{date_str} - {prompt_snippet} ({len(history)} turns)"
+    logs.append({"history": history, "system_prompt": system_prompt, "name": log_name})
     _save_json(filepath, logs)
     gr.Info(f"History saved for user '{request.username}'.")
+    return gr.update(choices=_build_history_choices(logs), value=None)
 
-def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config):
+def _build_history_choices(logs):
+    choices = []
+    for idx in range(len(logs) - 1, -1, -1):
+        entry = logs[idx]
+        label = entry.get("name", f"History {idx + 1}")
+        choices.append((label, str(idx)))
+    return choices
+
+def _find_history_entry(logs, selected_log: str):
+    if not selected_log:
+        return None
+    if selected_log.isdigit():
+        idx = int(selected_log)
+        if 0 <= idx < len(logs):
+            return logs[idx]
+        return None
+    for entry in reversed(logs):
+        name = (entry.get("name") or "").strip()
+        if name == selected_log:
+            return entry
+    # Fallback for truncated or slightly altered labels
+    for entry in reversed(logs):
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        if name.startswith(selected_log) or selected_log.startswith(name):
+            return entry
+    return None
+
+def _find_prompt_entry(prompts, selected_log: str):
+    if not selected_log:
+        return None
+    selected_log = selected_log.strip()
+    if selected_log.isdigit():
+        idx = int(selected_log)
+        if 0 <= idx < len(prompts):
+            return prompts[idx]
+        return None
+    for entry in reversed(prompts):
+        name = (entry.get("name") or "").strip()
+        if name == selected_log:
+            return entry
+    for entry in reversed(prompts):
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        if name.startswith(selected_log) or selected_log.startswith(name):
+            return entry
+    return None
+
+def _format_history_preview(history, system_prompt: str = "", max_turns: int = 6, max_chars: int = 2000) -> str:
+    if not history:
+        if system_prompt:
+            return f"System Prompt: {system_prompt}"
+        return ""
+    lines = []
+    if system_prompt:
+        lines.append(f"System Prompt: {system_prompt}")
+        lines.append("")
+    for user_msg, assistant_msg in history[:max_turns]:
+        user_text = remove_html_tags(user_msg or "")
+        assistant_text = remove_html_tags(assistant_msg or "")
+        lines.append(f"User: {user_text}")
+        lines.append(f"Assistant: {assistant_text}")
+        lines.append("")
+    preview = "\n".join(lines).strip()
+    if len(history) > max_turns:
+        preview += "\n\n…"
+    return preview[:max_chars]
+
+def load_history(request: gr.Request, selected_log: str):
+    """Loads a saved conversation history for the user."""
+    if not selected_log:
+        gr.Warning("Please select a history entry.")
+        return gr.update(value=[]), gr.update(value="")
+    filepath = _get_user_filepath(request.username, USER_HISTORY_FILE)
+    logs = _load_json(filepath, default=[])
+    match = _find_history_entry(logs, selected_log)
+    if not match:
+        gr.Warning("Selected history entry not found.")
+        return gr.update(value=[]), gr.update(value="")
+    system_prompt = match.get("system_prompt", match.get("prompt", ""))
+    return match.get("history", []), gr.update(value=system_prompt)
+
+def load_history_preview(request: gr.Request, selected_log: str):
+    """Updates the preview for the selected history without loading it."""
+    if not selected_log:
+        return gr.update(value="")
+    filepath = _get_user_filepath(request.username, USER_HISTORY_FILE)
+    logs = _load_json(filepath, default=[])
+    match = _find_history_entry(logs, selected_log)
+    if not match:
+        return gr.update(value="")
+    system_prompt = match.get("system_prompt", match.get("prompt", ""))
+    preview = _format_history_preview(match.get("history", []), system_prompt=system_prompt)
+    return gr.update(value=preview)
+
+def load_history_confirm(request: gr.Request, selected_log: str):
+    """Loads history after user confirmation and closes the history panel."""
+    if not selected_log:
+        gr.Warning("Please select a history entry.")
+        return gr.update(value=[]), gr.update(value=""), gr.update(visible=False)
+    filepath = _get_user_filepath(request.username, USER_HISTORY_FILE)
+    logs = _load_json(filepath, default=[])
+    match = _find_history_entry(logs, selected_log)
+    if not match:
+        gr.Warning("Selected history entry not found.")
+        return gr.update(value=[]), gr.update(value=""), gr.update(visible=False)
+    system_prompt = match.get("system_prompt", match.get("prompt", ""))
+    return match.get("history", []), gr.update(value=system_prompt), gr.update(visible=False)
+
+def load_system_prompt_preview(request: gr.Request, selected_log: str):
+    """Updates the preview for the selected system prompt without applying it."""
+    if not selected_log:
+        return gr.update(value="")
+    filepath = _get_user_filepath(request.username, USER_PROMPTS_FILE)
+    prompts = _load_json(filepath, default=[])
+    match = _find_prompt_entry(prompts, selected_log)
+    if not match:
+        return gr.update(value="")
+    system_prompt = match.get("system_prompt", match.get("prompt", ""))
+    return gr.update(value=system_prompt)
+
+def load_system_prompt_confirm(request: gr.Request, selected_log: str):
+    """Loads a system prompt after user confirmation and closes the prompt panel."""
+    if not selected_log:
+        gr.Warning("Please select a system prompt.")
+        return gr.update(value=""), gr.update(visible=False)
+    filepath = _get_user_filepath(request.username, USER_PROMPTS_FILE)
+    prompts = _load_json(filepath, default=[])
+    match = _find_prompt_entry(prompts, selected_log)
+    if not match:
+        gr.Warning("Selected system prompt not found.")
+        return gr.update(value=""), gr.update(visible=False)
+    system_prompt = match.get("system_prompt", match.get("prompt", ""))
+    return gr.update(value=system_prompt), gr.update(visible=False)
+
+def refresh_system_prompts(request: gr.Request):
+    filepath = _get_user_filepath(request.username, USER_PROMPTS_FILE)
+    prompts = _load_json(filepath, default=[])
+    return gr.update(choices=_build_prompt_choices(prompts), value=None)
+
+def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config, audio_qa_mode=None, text_llm_name=None):
     """Validates playground inputs before sending a query to the LLM."""
-    if not text.strip(): raise gr.Error("Query cannot be empty.")
     if not llm: raise gr.Error("Please select an LLM.")
     if not task_config: raise gr.Error("Please select a Task Configuration.")
-    
     task_config_dict = json.loads(task_config)
+    if task_config_dict.get("interface") != "audio":
+        if not text.strip():
+            raise gr.Error("Query cannot be empty.")
+    else:
+        if not dynamic_data.get("audio_buffer"):
+            raise gr.Error("No audio recorded. Please record audio first.")
+        if task_config_dict.get("audio_mode") == "qa" and audio_qa_mode == "whisper_llm":
+            if not text_llm_name:
+                raise gr.Error("Please select a Text LLM for Whisper + LLM mode.")
+    
     if task_config_dict.get("RAG") and not index_name:
         raise gr.Error("An index must be selected for this RAG task.")
     
@@ -195,7 +440,61 @@ def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config)
     if not (isinstance(temp, (int, float)) and 0 <= temp <= 2): raise gr.Error("Temperature must be between 0 and 2.")
     if not (isinstance(top_p, (int, float)) and 0 <= top_p <= 1): raise gr.Error("Top-p must be between 0 and 1.")
 
-def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str):
+def summarize_conversation(history, llm_name, task_config_str, system_prompt, temp, top_p, max_tokens):
+    """Generates a summary for the full chat history using the selected LLM."""
+    if not llm_name:
+        raise gr.Error("Please select an LLM.")
+    if not history:
+        raise gr.Error("No conversation to summarize.")
+
+    task_config = json.loads(task_config_str) if task_config_str else settings.BASIC_CONFIG
+    if task_config.get("interface") != "text":
+        raise gr.Error("Summarization is only supported for text tasks.")
+
+    turns = []
+    for user_msg, assistant_msg in history:
+        user_text = remove_html_tags(user_msg or "")
+        assistant_text = remove_html_tags(assistant_msg or "")
+        turns.append(f"User: {user_text}\nAssistant: {assistant_text}")
+    conversation_text = "\n\n".join(turns).strip()
+    if not conversation_text:
+        raise gr.Error("No conversation to summarize.")
+
+    query = (
+        "Summarize the following conversation in a concise paragraph:\n\n"
+        f"{conversation_text}"
+    )
+
+    summary = ""
+    stream = _process_llm_request(
+        llm_name,
+        system_prompt,
+        [],
+        query,
+        0,
+        "",
+        task_config,
+        dynamic_data["retriever_instance"],
+        temperature=temp,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+
+    for updated_history, _documents in stream:
+        if updated_history:
+            summary = updated_history[-1][1]
+
+    return summary
+
+def _collect_llm_response(response):
+    if isinstance(response, str):
+        return response
+    try:
+        return "".join([part for part in response])
+    except TypeError:
+        return str(response)
+
+def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str, language=None, audio_qa_mode=None, text_llm_name=None):
     """Handles user interaction in the Gradio chat interface."""
     task_config = json.loads(task_config_str)
     history = history or []
@@ -203,14 +502,38 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
     # Handle audio interface if needed
     audio_in = None
     if task_config.get("interface") == "audio":
-        audio_in = deepcopy(dynamic_data.get("audio_buffer", []))
+        audio_in = bytes(deepcopy(dynamic_data.get("audio_buffer", [])))
         dynamic_data["audio_buffer"] = []
-        input_text = "Transcribe and respond to the audio."
+        audio_mode = task_config.get("audio_mode")
+        if audio_mode == "transcription":
+            input_text = "Transcribe the audio."
+        elif audio_mode == "diarization":
+            input_text = "Diarize the audio."
+        elif audio_mode == "qa":
+            if audio_qa_mode == "whisper_llm":
+                transcription = _collect_llm_response(
+                    llm_handler(
+                        llm_name,
+                        "",
+                        [],
+                        [],
+                        audio=audio_in,
+                        language=language,
+                    )
+                )
+                input_text = transcription
+                task_config = {"interface": "text", "RAG": False, "service": "local", "name": "Audio QA (Whisper + LLM)"}
+                llm_name = text_llm_name
+                audio_in = None
+            else:
+                input_text = ""
+        else:
+            input_text = "Transcribe and respond to the audio."
 
     stream = _process_llm_request(
         llm_name, system_prompt, history, input_text, docs_k, index_name,
         task_config, dynamic_data["retriever_instance"],
-        temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in
+        temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in, language=language
     )
     
     for updated_history, documents in stream:
@@ -219,7 +542,7 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
         yield (
             updated_history,
             context_html,
-            gr.update(visible=len(documents) > 0),
+            gr.update(visible=bool(task_config.get("RAG"))),
             gr.Textbox(value="", interactive=False),
         )
 
@@ -271,7 +594,17 @@ def _get_task_configs():
         content = _load_json(filepath, default={})
         if "name" in content:
             configs.append((content["name"], json.dumps(content)))
-    return gr.Radio(label="Task configuration", choices=configs), configs
+    preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "Audio QA", "Transcription", "Diarization"]
+    order_index = {name: idx for idx, name in enumerate(preferred_order)}
+    configs.sort(key=lambda item: order_index.get(item[0], len(preferred_order)))
+    default_value = None
+    for label, value in configs:
+        if label == "Basic LLM":
+            default_value = value
+            break
+    if default_value is None and configs:
+        default_value = configs[0][1]
+    return gr.Radio(label="Task configuration", choices=configs, value=default_value), configs
 
 def _get_retrievers(user: str):
     with open(settings.RETRIEVER_CONFIG_PATH) as f:
@@ -282,49 +615,216 @@ def _get_retrievers(user: str):
     print("RETRIEBERS", str(retrievers))
     return gr.Radio(label="Vector Store", choices=[(k, v) for k, v in retrievers.items()]), retrievers
 
+def _build_prompt_choices(prompts):
+    choices = []
+    for idx in range(len(prompts) - 1, -1, -1):
+        entry = prompts[idx]
+        label = entry.get("name", f"Prompt {idx + 1}")
+        choices.append((label, str(idx)))
+    return choices
+
 def _get_prompts(user: str):
     filepath = _get_user_filepath(user, USER_PROMPTS_FILE)
     prompts = _load_json(filepath)
-    return gr.Dropdown(label="Prompt", choices=[(p["name"], p["prompt"]) for p in prompts])
+    return gr.Radio(label="Saved System Prompts", choices=_build_prompt_choices(prompts))
 
 def _get_historical_prompts(user: str):
     filepath = _get_user_filepath(user, USER_HISTORY_FILE)
     logs = _load_json(filepath)
-    return gr.Dropdown(label="History", choices=[p["name"] for p in logs])
+    return gr.Radio(label="Saved Histories", choices=_build_history_choices(logs))
 
 def _get_online_models(available_llms):
+    probe_models = str(os.environ.get("ELOQ_PROBE_MODELS_ON_LOAD", "true")).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _build_silent_wav(sample_rate: int = 16000, duration_ms: int = 120) -> bytes:
+        import io
+        import wave
+
+        frame_count = max(1, int(sample_rate * (duration_ms / 1000.0)))
+        pcm_silence = b"\x00\x00" * frame_count  # 16-bit mono silence
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(pcm_silence)
+        return buf.getvalue()
+
+    def _interactor_name(model_name: str) -> str:
+        entry = available_llms.get(model_name, {})
+        return str(entry.get("interactor", "")).strip().lower()
+
+    def _is_sdialog_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "sdialog"
+
     def _is_model_online(model_name):
-        gr.Info(f"Checking availability of {model_name}")
-        if check_llm_interface(model_name, "text", available_llms=llm_handler.available_llms):
-            task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data["retriever_instance"])
-            query = history_user_entry = "hello, say one random words"
-            history = [[history_user_entry, ""]]
-            for part, documents in task_handler(model_name,
-                                                "",
-                                                history,
-                                                query,
-                                                0,
-                                                "index_name",
-                                                max_tokens=2):
+        logger.info("Checking availability of %s", model_name)
+        interactor = _interactor_name(model_name)
+        try:
+            if check_llm_interface(model_name, "text", available_llms=llm_handler.available_llms):
+                task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler, dynamic_data.get("retriever_instance"))
+                query = history_user_entry = "hello, say one random words"
+                history = [[history_user_entry, ""]]
+                for part, documents in task_handler(model_name,
+                                                    "",
+                                                    history,
+                                                    query,
+                                                    0,
+                                                    "index_name",
+                                                    max_tokens=2):
+                    return True
                 return True
-        else:
-            task_handler = get_task_handler(settings.BASIC_AUDIO_CONFIG, llm_handler, dynamic_data["retriever_instance"])
-            query = history_user_entry = "hello, say one random words"
-            history = [[history_user_entry, ""]]
-            afd = open("hi.wav", "rb")
-            for part, documents in task_handler(model_name,
-                                                "",
-                                                history,
-                                                query,
-                                                0,
-                                                "index_name",
-                                                max_tokens=2,
-                                                audio=afd.read()):
+            elif check_llm_interface(model_name, "audio", available_llms=llm_handler.available_llms):
+                # WhisperX supports diarization audio mode, so probe with diarization if possible.
+                audio_mode = "diarization" if interactor == "whisperx" else "transcription"
+                task_config = {
+                    "interface": "audio",
+                    "RAG": False,
+                    "service": "local",
+                    "audio_mode": audio_mode,
+                }
+                task_handler = get_task_handler(task_config, llm_handler, dynamic_data.get("retriever_instance"))
+                sample_audio = _build_silent_wav()
+                query = "Diarize the audio." if audio_mode == "diarization" else "Describe the audio."
+                history = [[query, ""]]
+                for part, documents in task_handler(
+                    model_name,
+                    "",
+                    history,
+                    query,
+                    0,
+                    "index_name",
+                    max_tokens=2,
+                    audio=sample_audio,
+                    language="en",
+                ):
+                    return True
                 return True
- 
+        except Exception as e:
+            logger.error("Error checking model %s: %s", model_name, e)
+            return False
 
         return False
 
     choices = [(llm, llm) for llm in available_llms.keys()]
-    online_choices = [choice for choice in choices if _is_model_online(choice[1])]
-    return gr.Radio(label="Available LLMs", choices=online_choices), [c[1] for c in online_choices]
+    if probe_models:
+        probed_online_choices = [choice for choice in choices if _is_model_online(choice[1])]
+    else:
+        # Avoid cross-endpoint health probes on page load unless explicitly enabled.
+        probed_online_choices = choices
+
+    # Preserve all online models (including task-specific ones) for task-level filtering.
+    dynamic_data["online_llms"] = [c[1] for c in probed_online_choices]
+
+    # Keep task-specific models out of global/default model lists.
+    online_choices = [choice for choice in probed_online_choices if not _is_sdialog_model(choice[1])]
+    default_model = online_choices[0][1] if online_choices else None
+    return gr.Radio(label="Available LLMs", choices=online_choices, value=default_model), dynamic_data["online_llms"]
+
+def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
+    """Update LLM choices based on task interface."""
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    task_name = task_config.get("name")
+    interface = "audio" if task_config.get("interface") == "audio" else "text"
+    audio_mode = task_config.get("audio_mode")
+
+    def _interactor_name(model_name: str) -> str:
+        entry = llm_handler.available_llms.get(model_name, {})
+        return str(entry.get("interactor", "")).strip().lower()
+
+    def _is_whisper_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "whisper"
+
+    def _is_whisperx_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "whisperx"
+
+    def _is_sdialog_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "sdialog"
+
+    online_llms = dynamic_data.get("online_llms", [])
+    if online_llms:
+        choices = [
+            (name, name)
+            for name in online_llms
+            if check_llm_interface(name, interface, available_llms=llm_handler.available_llms)
+        ]
+    else:
+        choices = [
+            (m["display_name"], m["display_name"])
+            for m in llm_handler.available_llms.values()
+            if m.get("interface") == interface
+        ]
+
+    if task_name == "SDialog":
+        choices = [choice for choice in choices if _is_sdialog_model(choice[1])]
+    else:
+        choices = [choice for choice in choices if not _is_sdialog_model(choice[1])]
+
+    if interface == "audio" and audio_mode:
+        if audio_mode == "transcription":
+            choices = [choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])]
+        elif audio_mode == "diarization":
+            choices = [choice for choice in choices if _is_whisperx_model(choice[1])]
+        elif audio_mode == "qa":
+            if audio_qa_mode == "whisper_llm":
+                choices = [choice for choice in choices if _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])]
+            else:
+                choices = [
+                    choice
+                    for choice in choices
+                    if not _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])
+                ]
+
+    default_value = choices[0][1] if choices else None
+    return gr.update(choices=choices, value=default_value, visible=True)
+
+def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    interface = "audio" if task_config.get("interface") == "audio" else "text"
+    audio_mode = task_config.get("audio_mode")
+
+    def _interactor_name(model_name: str) -> str:
+        entry = llm_handler.available_llms.get(model_name, {})
+        return str(entry.get("interactor", "")).strip().lower()
+
+    if not (interface == "audio" and audio_mode == "qa" and audio_qa_mode == "whisper_llm"):
+        return gr.update(visible=False, value=None)
+
+    online_llms = dynamic_data.get("online_llms", [])
+    if online_llms:
+        choices = [
+            (name, name)
+            for name in online_llms
+            if check_llm_interface(name, "text", available_llms=llm_handler.available_llms)
+        ]
+    else:
+        choices = [
+            (m["display_name"], m["display_name"])
+            for m in llm_handler.available_llms.values()
+            if m.get("interface") == "text"
+        ]
+
+    filtered_choices = []
+    for label, value in choices:
+        is_sdialog_model = _interactor_name(value) == "sdialog"
+        if not is_sdialog_model:
+            filtered_choices.append((label, value))
+
+    default_value = filtered_choices[0][1] if filtered_choices else None
+    return gr.update(choices=filtered_choices, value=default_value, visible=True)
+
+def update_llm_params_visibility(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    interface = "audio" if task_config.get("interface") == "audio" else "text"
+    audio_mode = task_config.get("audio_mode")
+
+    if interface == "text":
+        return gr.update(visible=True)
+    if interface == "audio" and audio_mode == "qa" and audio_qa_mode == "whisper_llm":
+        return gr.update(visible=True)
+    return gr.update(visible=False)
+
+def update_rag_params_visibility(task_config_str: str) -> gr.update:
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    rag_enabled = task_config.get("name") == "RAG"
+    return gr.update(visible=rag_enabled)

@@ -17,11 +17,55 @@ class LocalTaskHandler:
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
         if not check_llm_interface(llm_name, self.task_config["interface"], available_llms=self.llm_handler.available_llms):
             raise ValueError(f"LLM {llm_name} does not support the required interface {self.task_config['interface']}.")
-        documents = [""]
+        if self.task_config.get("interface") == "audio":
+            audio_mode = self.task_config.get("audio_mode")
+            if audio_mode:
+                entry = self.llm_handler.available_llms.get(llm_name, {})
+                interactor = str(entry.get("interactor", "")).strip().lower()
+
+                is_whisper = interactor == "whisper"
+                is_whisperx = interactor == "whisperx"
+                if audio_mode == "transcription" and not is_whisper:
+                    raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper model.")
+                if audio_mode == "transcription" and is_whisperx:
+                    raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper model, not WhisperX.")
+                if audio_mode == "diarization" and not is_whisperx:
+                    raise ValueError(f"Task {self.task_config.get('name', 'Diarization')} requires a WhisperX model.")
+                if audio_mode == "qa" and (is_whisper or is_whisperx):
+                    raise ValueError(f"Task {self.task_config.get('name', 'Audio QA')} does not support Whisper or WhisperX.")
+                if audio_mode == "diarization":
+                    params["diarize"] = True
+        documents = []
+        documents_metadata = []
         if self.task_config["RAG"]:
-            documents = self.retriever.search(index_name, query, docs_k)
-        for part in self.llm_handler(llm_name, system_prompt, history, documents, **params):
-            yield part, documents
+            if hasattr(self.retriever, "search_with_metadata"):
+                documents, documents_metadata = self.retriever.search_with_metadata(index_name, query, docs_k)
+            else:
+                documents = self.retriever.search(index_name, query, docs_k)
+        # Retrieved RAG snippets reach the LLM here
+        llm_response = self.llm_handler(
+            llm_name,
+            system_prompt,
+            history,
+            documents,
+            task_name=self.task_config.get("name"),
+            **params,
+        )
+
+        if llm_response is None:
+            yield "", documents, documents_metadata
+            return
+
+        if isinstance(llm_response, str):
+            yield llm_response, documents, documents_metadata
+            return
+
+        if isinstance(llm_response, dict):
+            yield llm_response, documents, documents_metadata
+            return
+
+        for part in llm_response:
+            yield part, documents, documents_metadata
 
 
 class RemoteHandlerClient:

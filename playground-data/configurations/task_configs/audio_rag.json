@@ -1,0 +1,7 @@
+{
+    "name": "Audio QA",
+    "RAG": false,
+    "interface": "audio",
+    "service": "local",
+    "audio_mode": "qa"
+}
