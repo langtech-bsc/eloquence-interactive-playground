@@ -24,7 +24,7 @@ from gradio_app.helpers import (
     _get_user_filepath,
     check_llm_interface,
 )
-from dialog_manager.client import DialogClient
+from dialogue_manager.client import DMClient
 from retrievers.client import RetrieverClient
 from settings import settings, USER_FEEDBACK_FILE, USER_HISTORY_FILE, USER_PROMPTS_FILE, USER_RETRIEVERS_FILE
 

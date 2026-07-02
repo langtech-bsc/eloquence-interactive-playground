@@ -50,13 +50,18 @@ jupyterlab_widgets==3.0.13
 kiwisolver==1.4.7
 lancedb==0.15.0
 langchain==0.3.7
+langchain-ollama==1.0.1
 langchain-community==0.3.5
 langchain-experimental==0.3.4
-langchain-core==0.3.31
+langchain-core==1.2.13
 langchain-huggingface==0.1.2
 # langchain-openai==0.3.2
 langchain-text-splitters==0.3.2
 langsmith==0.1.139
+langgraph==1.0.8
+langgraph-checkpoint==4.0.0
+langgraph-prebuilt==1.0.7
+langgraph-sdk==0.3.6
 Markdown==3.5.1
 markdown-it-py==3.0.0
 MarkupSafe==2.1.5
@@ -73,6 +78,7 @@ nltk==3.9.1
 numpy==1.26.4
 openai==1.102.0
 orjson==3.10.11
+ormsgpack
 overrides==7.7.0
 packaging==24.1
 pandas==2.2.3
@@ -134,8 +140,10 @@ typing_extensions==4.12.2
 tzdata==2024.2
 urllib3==2.2.3
 uvicorn==0.32.0
+uuid-utils
 wcwidth==0.2.13
 websockets==11.0.3
 widgetsnbextension==4.0.13
 wikiextractor==3.0.6
+xxhash
 yarl==1.17.1

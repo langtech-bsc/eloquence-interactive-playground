@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
-from dialog_manager import DialogManager, DialogState
+from dialogue_manager.dialogue_manager import DialogManager, DialogState
 import uvicorn
 import argparse
 from settings import settings

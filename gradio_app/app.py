@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from gradio_app.helpers import extract_docs_from_rendered_template
 from gradio_app.messages import *
 
-from dialog_manager.client import DMClient  ### <--- ADDED TODO init DM session
+from dialogue_manager.client import DMClient  ### <--- ADDED TODO init DM session - DONE
 
 from retrievers.client import RetrieverClient
 from settings import settings, normalize_path_prefix

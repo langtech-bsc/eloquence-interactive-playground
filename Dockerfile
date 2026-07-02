@@ -7,6 +7,7 @@ RUN apt install curl -y
 RUN apt install iputils-ping ffmpeg -y
 
 COPY requirements.txt ./
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir --no-deps -r requirements.txt
 RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 

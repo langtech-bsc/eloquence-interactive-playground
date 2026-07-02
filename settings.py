@@ -20,6 +20,7 @@ def normalize_path_prefix(prefix: Optional[str]) -> str:
     prefix = prefix.rstrip("/")
     return prefix
 
+
 class LLMEntry:
 
     def __init__(self, llm_entry):
@@ -30,14 +31,8 @@ class LLMEntry:
 
 
 class Settings(BaseSettings):
-<<<<<<< HEAD
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    MARKDOWN_SOURCE_DIR: str = "data/transformers/docs/source/en/"
-    PERSISTENT_DATA_ROOT: str = os.environ.get("PERSISTENT_DATA", "/app")
-=======
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
     PERSISTENT_DATA_ROOT: str = os.environ.get("PERSISTENT_DATA", "/playground-data")
->>>>>>> origin/main
     LANCEDB_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/lancedb"
     LANCEDB_TABLE_NAME: str = "table"
     VECTOR_COLUMN_NAME: str = "embedding"
