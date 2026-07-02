@@ -8,6 +8,7 @@ app = FastAPI()
 # Example data storage (in-memory)
 items = []
 
+
 class Request(BaseModel):
     query: str
 
@@ -19,9 +20,10 @@ class Response(BaseModel):
 
 @app.post("/respond", response_model=Response)
 async def respond(request: Request):
-    return Response(text=f"This is a Dialogue Manager response to '{request.query}'. This is retrived from document 1 [doc1]",
-                    documents=["This is a sample document 1", "This is another supporting doc"])
-
+    return Response(
+        text=f"This is a Dialogue Manager response to '{request.query}'. This is retrived from document 1 [doc1]",
+        documents=["This is a sample document 1", "This is another supporting doc"],
+    )
 
 
 # Sample request and response for /search

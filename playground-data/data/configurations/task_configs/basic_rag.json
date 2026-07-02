@@ -1,0 +1,6 @@
+{
+    "name": "RAG",
+    "RAG": true,
+    "interface": "text",
+    "service": "local"
+}

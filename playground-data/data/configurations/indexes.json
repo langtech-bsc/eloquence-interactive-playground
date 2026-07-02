@@ -1,0 +1,5 @@
+{
+    "conv1": "sentence-transformers/all-MiniLM-L6-v2",
+    "CNRUsabilityTest": "sentence-transformers/all-MiniLM-L6-v2",
+    "CNR_test1": "sentence-transformers/all-mpnet-base-v2"
+}

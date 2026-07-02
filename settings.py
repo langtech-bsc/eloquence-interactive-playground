@@ -7,6 +7,7 @@ USER_HISTORY_FILE = "history.json"
 USER_PROMPTS_FILE = "prompts.json"
 USER_RETRIEVERS_FILE = "retrievers.json"
 
+
 class LLMEntry:
 
     def __init__(self, llm_entry):
@@ -17,7 +18,7 @@ class LLMEntry:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     MARKDOWN_SOURCE_DIR: str = "data/transformers/docs/source/en/"
     PERSISTENT_DATA_ROOT: str = os.environ.get("PERSISTENT_DATA", "/app")
     LANCEDB_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/lancedb"
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
     RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7999"
     BASIC_CONFIG: dict = {"interface": "text", "RAG": False, "service": "local"}
     BASIC_AUDIO_CONFIG: dict = {"interface": "audio", "RAG": False, "service": "local"}
-    
+
     EMBEDDING_SIZES: dict = {
         "sentence-transformers/all-MiniLM-L6-v2": 384,
         "sentence-transformers/all-mpnet-base-v2": 768,
@@ -51,7 +52,6 @@ class Settings(BaseSettings):
         "Qwen2-Audio": 4096,
         "EuroLLM": 4096,
         "Salamandra (MN5)": 8196,
-        "Salamandra (MN5)": 8196,
         "Salamandra (HF)": 8196,
         "sentence-transformers/all-MiniLM-L6-v2": 128,
         "thenlper/gte-large": 512,
@@ -66,6 +66,22 @@ class Settings(BaseSettings):
     USER_WORKSPACES: str = f"{PERSISTENT_DATA_ROOT}/workspaces"
     GENERIC_UPLOAD: str = f"uploads"
     SQL_DB: str = f"{PERSISTENT_DATA_ROOT}/ip.db"
+
+    # ===== Dialog Manager Settings =====
+    DIALOG_ENDPOINT: str = os.environ.get("DIALOG_ENDPOINT", "http://127.0.0.1:8003")
+    DIALOG_SESSIONS_PATH: str = f"{PERSISTENT_DATA_ROOT}/dialog_sessions.json"
+    DIALOG_MODELS_DIR: str = f"{PERSISTENT_DATA_ROOT}/models/dialog"
+
+    # Ollama settings for dialog manager
+    OLLAMA_BASE_URL: str = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11435")
+    OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "gemma4:12b")
+
+    # GLiNER model settings
+    GLINER_MODEL_NAME: str = os.environ.get("GLINER_MODEL_NAME", "gliner2_finetuned_uns")
+    GLINER_THRESHOLD: float = float(os.environ.get("GLINER_THRESHOLD", "0.5"))
+
+    # Dialog settings
+    MAX_DIALOG_TURNS: int = 10
 
     CSS: str = """
     button.secondary {
@@ -205,5 +221,6 @@ async () => {
     globalThis.Scrolldown();
 }
 """
+
 
 settings = Settings()
