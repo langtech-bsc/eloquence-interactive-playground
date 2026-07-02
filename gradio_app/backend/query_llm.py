@@ -34,6 +34,7 @@ class LLMHandler:
         "whisper": WhisperInteractor,
         "whisperx": WhisperXInteractor,
         "sdialog": SDialogInteractor,
+        "ner": GLiNERInteractor,
     }
 
     def __init__(self, available_llms) -> None:
