@@ -117,10 +117,10 @@ class Settings(BaseSettings):
                 headers.append(cleaned)
         return tuple(headers)
 
-    # ===== Dialog Manager Settings =====
-    DIALOG_ENDPOINT: str = os.environ.get("DIALOG_ENDPOINT", "http://127.0.0.1:8003")
-    DIALOG_SESSIONS_PATH: str = f"{PERSISTENT_DATA_ROOT}/dialog_sessions.json"
-    DIALOG_MODELS_DIR: str = f"{PERSISTENT_DATA_ROOT}/models/dialog"
+    # Dialog Manager Settings
+    DM_ENDPOINT: str = os.environ.get("DM_ENDPOINT", "http://127.0.0.1:8003")
+    DM_SESSIONS_PATH: str = f"{PERSISTENT_DATA_ROOT}/dialog_sessions.json"
+    DM_MODELS_DIR: str = f"{PERSISTENT_DATA_ROOT}/models/dialog"
 
     # Ollama settings for dialog manager
     OLLAMA_BASE_URL: str = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11435")

@@ -122,11 +122,11 @@ class DialogManager:
         self.llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0, num_predict=2048)
 
         # Load NER model -> TODO CHANGE with the BSC located finetuned GLiNER
-        self.ner_model = GLiNER.from_pretrained(
-            "gliner2_finetuned_uns",
-            load_tokenizer=True,
-        )
-        self.ner_model.eval()
+        # self.ner_model = GLiNER.from_pretrained(
+        #     "./gliner2_finetuned_uns",
+        #     load_tokenizer=True,
+        # )
+        # self.ner_model.eval()
 
         # Initialize prompts
         self._init_prompts()
@@ -564,15 +564,15 @@ The summary should be in plain English, about 3-5 sentences, and ready to be rea
 
     def _load_sessions(self):
         """Load sessions from disk."""
-        if os.path.exists(settings.DIALOG_SESSIONS_PATH):
+        if os.path.exists(settings.DM_SESSIONS_PATH):
             try:
-                with open(settings.DIALOG_SESSIONS_PATH, "r") as f:
+                with open(settings.DM_SESSIONS_PATH, "r") as f:
                     self.sessions = json.load(f)
             except:
                 self.sessions = {}
 
     def _save_sessions(self):
         """Save sessions to disk."""
-        os.makedirs(os.path.dirname(settings.DIALOG_SESSIONS_PATH), exist_ok=True)
-        with open(settings.DIALOG_SESSIONS_PATH, "w") as f:
+        os.makedirs(os.path.dirname(settings.DM_SESSIONS_PATH), exist_ok=True)
+        with open(settings.DM_SESSIONS_PATH, "w") as f:
             json.dump(self.sessions, f, indent=2)

@@ -5,19 +5,11 @@ services:
       context: .
     pull_policy: build
     ports:
-<<<<<<< HEAD
       - "8084:8084"
     restart: unless-stopped
     network_mode: "host"
     environment:
       - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
-    volumes:
-      - ../playground-data/data/:/data/
-=======
-      - "8086:8086"
-    environment:
-      - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
       - ROOT_PATH=/dev
     volumes:
-      - ./playground-data:/data:rw
->>>>>>> origin/main
+      - ../playground-data/data/:/data/

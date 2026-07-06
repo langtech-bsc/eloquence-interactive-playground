@@ -7,12 +7,14 @@ RUN apt install curl -y
 RUN apt install iputils-ping ffmpeg -y
 
 COPY requirements.txt ./
+COPY ./GLiNER/ /app/libs/GLiNER
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir --no-deps -r requirements.txt
 RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install openai==1.102.0
 COPY . .
+
 
 RUN mkdir /data
 

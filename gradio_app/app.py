@@ -238,6 +238,8 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
     dm_address = kwargs.get("dm_address", settings.DM_ENDPOINT)
     dm_instance = DMClient(endpoint=dm_address)
 
+    logging.info("Initializing dm_client...\n\n\n\n")
+
     retriever_address = kwargs.get("retriever_address", settings.RETRIEVER_ENDPOINT)
     retriever_instance = RetrieverClient(endpoint=retriever_address)
 
@@ -881,6 +883,7 @@ app = gr.mount_gradio_app(
 if __name__ == "__main__":
 
     port = int(os.environ.get("GRADIO_SERVER_PORT", 8080))
+    logging.info(f"Starting Gradio app on port {port} with root path '{settings.ROOT_PATH}'")
     uvicorn.run(
         "gradio_app.app:app",
         host="0.0.0.0",
