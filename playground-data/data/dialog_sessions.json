@@ -1,0 +1,12 @@
+{
+  "1": {
+    "turn_count": 0,
+    "entities": {},
+    "history": [],
+    "category": null,
+    "last_query": null,
+    "last_user_utterance": null,
+    "terminated": false,
+    "ood": false
+  }
+}
