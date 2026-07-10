@@ -505,7 +505,13 @@ async () => {
             return null;
         }
     };
+    
+    const isMeusliSelected = (modelName) => {
+        if (!modelName) return false;
+        return String(modelName).toLowerCase().includes("meusli");
+    };
 
+    
     const isWhisperSelected = (modelName) => {
         if (!modelName) return false;
         return String(modelName).toLowerCase().includes("whisper");
@@ -553,8 +559,8 @@ async () => {
                 status.innerText = "Please select a Whisper model before recording.";
                 return;
             }
-            if (!isWhisperSelected(selectedAudioModel) || isWhisperXSelected(selectedAudioModel)) {
-                status.innerText = "Selected model is not Whisper. Please pick a Whisper model before recording.";
+            if ((!isWhisperSelected(selectedAudioModel) && !isMeusliSelected(selectedAudioModel)) || isWhisperXSelected(selectedAudioModel)) {
+                status.innerText = "Selected model is not Whisper/Meusli. Please pick a Whisper/Meusli model before recording.";
                 return;
             }
         }
