@@ -26,7 +26,7 @@
     {
         "model_name": "meusli-slam-asr",
         "interactor": "meusli",
-        "display_name": "meusli-slam-asr",
+        "display_name": "MEUSLI-SLAM-ASR",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:58096/v1",
         "interface": "audio"
@@ -42,7 +42,7 @@
     {
         "model_name": "Qwen2-Audio-7B-Instruct",
         "interactor": "qwen",
-        "display_name": "Qwen2-Audio-7B-Instruct",
+        "display_name": "Qwen2 Audio 7B Instruct",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:58102/v1",
         "interface": "audio"
@@ -58,7 +58,7 @@
     {
         "model_name": "Ministral-3-14B-Instruct-2512",
         "interactor": "apertus",
-        "display_name": "Ministral-3-14B-Instruct-2512",
+        "display_name": "Ministral3 14B Instruct",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:58100/v1/",
         "interface": "text"
@@ -74,7 +74,7 @@
     {
         "model_name": "Apertus-8B-Instruct-2509",
         "interactor": "apertus",
-        "display_name": "Apertus-8B-Instruct-2509",
+        "display_name": "Apertus 8B Instruct",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:58101/v1",
         "interface": "text"
@@ -82,7 +82,7 @@
     {
         "model_name": "Llama-Krikri-8B-Instruct",
         "interactor": "llama",
-        "display_name": "Llama-Krikri-8B-Instruct",
+        "display_name": "Llama Krikri 8B Instruct",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:58105/v1",
         "interface": "text"
@@ -98,7 +98,7 @@
     {
         "model_name": "ALIA-40b-instruct-2605",
         "interactor": "salamandra",
-        "display_name": "ALIA-40b-instruct-2605",
+        "display_name": "ALIA 40b instruct",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:58098/v1",
         "interface": "text"
