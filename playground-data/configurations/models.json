@@ -1,18 +1,34 @@
 [
     {
-        "model_name": "salamandra-7b-instruct",
-        "interactor": "salamandra",
-        "display_name": "Salamandra (HF)",
-        "api_key": "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",
-        "api_endpoint": "https://gg1brnpmx53zkhrg.eu-west-1.aws.endpoints.huggingface.cloud/v1",
+        "model_name": "Mistral-Small-3.1-24B-Instruct-2503",
+        "interactor": "apertus",
+        "display_name": "Mistral Small 3.1 24B",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:58091/v1",
         "interface": "text"
     },
     {
-        "model_name": "whisper-large-v3",
+        "model_name": "gemma-4-31B-it",
+        "interactor": "gemma",
+        "display_name": "Gemma 4 31B",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:58099/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "whisper-large-v3-turbo",
         "interactor": "whisper",
         "display_name": "Whisper",
-        "api_key": "local-whisper",
-        "api_endpoint": "http://localhost:9080/v1",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:58095/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "meusli-slam-asr",
+        "interactor": "meusli",
+        "display_name": "meusli-slam-asr",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:58096/v1",
         "interface": "audio"
     },
     {
@@ -20,48 +36,56 @@
         "interactor": "whisperx",
         "display_name": "WhisperX",
         "api_key": "",
-        "api_endpoint": "http://localhost:9081/v1",
+        "api_endpoint": "http://127.0.0.1:58097/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "Qwen2-Audio-7B-Instruct",
+        "interactor": "qwen",
+        "display_name": "Qwen2-Audio-7B-Instruct",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:58102/v1",
         "interface": "audio"
     },
     {
         "model_name": "salamandra-7b-instruct",
         "interactor": "salamandra",
-        "display_name": "Salamandra (TID)",
+        "display_name": "Salamandra 7B",
         "api_key": "",
-        "api_endpoint": "http://127.0.0.1:10005/v1/",
+        "api_endpoint": "http://127.0.0.1:58093/v1/",
         "interface": "text"
     },
     {
-        "model_name": "gemma-3-27b-it",
-        "interactor": "gemma",
-        "display_name": "Gemma 3 (TID)",
+        "model_name": "Ministral-3-14B-Instruct-2512",
+        "interactor": "apertus",
+        "display_name": "Ministral-3-14B-Instruct-2512",
         "api_key": "",
-        "api_endpoint": "http://127.0.0.1:10007/v1",
+        "api_endpoint": "http://127.0.0.1:58100/v1/",
         "interface": "text"
     },
     {
-        "model_name": "gemma-4-31B-it",
-        "interactor": "gemma",
-        "display_name": "Gemma 4 (TID)",
+        "model_name": "EuroLLM-9B-Instruct",
+        "interactor": "eurollm",
+        "display_name": "EuroLLM 9B",
         "api_key": "",
-        "api_endpoint": "http://127.0.0.1:10002/v1",
+        "api_endpoint": "http://127.0.0.1:58094/v1",
         "interface": "text"
     },
     {
         "model_name": "Apertus-8B-Instruct-2509",
         "interactor": "apertus",
-        "display_name": "Apertus (TID)",
+        "display_name": "Apertus-8B-Instruct-2509",
         "api_key": "",
-        "api_endpoint": "http://127.0.0.1:10003/v1",
+        "api_endpoint": "http://127.0.0.1:58101/v1",
         "interface": "text"
     },
     {
-        "model_name": "Qwen2.5-Audio",
-        "interactor": "qwen",
-        "display_name": "Qwen2.5 (TID)",
+        "model_name": "Llama-Krikri-8B-Instruct",
+        "interactor": "llama",
+        "display_name": "Llama-Krikri-8B-Instruct",
         "api_key": "",
-        "api_endpoint": "http://127.0.0.1:10003/v1",
-        "interface": "audio"
+        "api_endpoint": "http://127.0.0.1:58105/v1",
+        "interface": "text"
     },
     {
         "model_name": "Scientist:latest",
@@ -72,11 +96,11 @@
         "interface": "text"
     },
     {
-        "model_name": "Mistral-Small-3.1-24B-Instruct-2503",
-        "interactor": "apertus",
-        "display_name": "Mistral Small 3.1 24B (BSC)",
+        "model_name": "ALIA-40b-instruct-2605",
+        "interactor": "salamandra",
+        "display_name": "ALIA-40b-instruct-2605",
         "api_key": "",
-        "api_endpoint": "http://84.88.53.199:9102/v1",
+        "api_endpoint": "http://127.0.0.1:58098/v1",
         "interface": "text"
     }
 ]

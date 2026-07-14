@@ -14,7 +14,8 @@ from gradio_app.backend.BSCInteract import (
     WhisperInteractor,
     WhisperXInteractor,
     SDialogInteractor,
-    MeusliInteractor
+    MeusliInteractor,
+    LlamaInteractor
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +34,7 @@ class LLMHandler:
         "whisperx": WhisperXInteractor,
         "sdialog": SDialogInteractor,
         "meusli": MeusliInteractor,
+        "llama": LlamaInteractor
     }
 
     def __init__(self, available_llms) -> None:

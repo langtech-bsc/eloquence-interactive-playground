@@ -189,6 +189,29 @@ class BSCInteractor:
         return completion
 
 
+class LlamaInteractor(BSCInteractor):
+    def _construct_message_list(self, llm, system_prompt, context, history, audio):
+        messages = []
+
+        # 1. Handle System Prompt and Context
+        system_content = system_prompt or ""
+        if context:
+            system_content += f"\n\nContext: {context}"
+
+        if system_content:
+            messages.append({
+                "role": "system",
+                "content": system_content
+            })
+
+        # 2. Handle Conversation History
+        for q, a in history:
+            messages.append({"role": "user", "content": q})
+            if a:  # Only add assistant response if it exists
+                messages.append({"role": "assistant", "content": reverse_doc_links(a)})
+
+        return messages
+
 class OlmoInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         messages = []
