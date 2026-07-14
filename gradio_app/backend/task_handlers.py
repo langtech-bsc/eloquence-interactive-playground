@@ -24,9 +24,10 @@ class LocalTaskHandler:
                 interactor = str(entry.get("interactor", "")).strip().lower()
 
                 is_whisper = interactor == "whisper"
+                is_meusli = interactor == "meusli"
                 is_whisperx = interactor == "whisperx"
-                if audio_mode == "transcription" and not is_whisper:
-                    raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper model.")
+                if audio_mode == "transcription" and (not is_whisper and not is_meusli):
+                    raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper/Meusli model.")
                 if audio_mode == "transcription" and is_whisperx:
                     raise ValueError(f"Task {self.task_config.get('name', 'Transcription')} requires a Whisper model, not WhisperX.")
                 if audio_mode == "diarization" and not is_whisperx:

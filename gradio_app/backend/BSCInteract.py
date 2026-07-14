@@ -15,10 +15,12 @@ logger = logging.getLogger(__name__)
 env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 
-# Base class for BSC-based interactors, providing common functionality for constructing messages, handling requests, and formatting responses. 
+
+#  Base class for BSC-based interactors, providing common functionality for constructing messages, handling requests, and formatting responses.
 # Specific model interactors (Olmo, Eurollm, Qwen, etc.) inherit from this class and implement their own message construction logic based on the expected input format of the respective models.
 class BSCInteractor:
-    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None,
+                 stream=False):
         self.model_name = model_name
         self.api_endpoint = api_endpoint
         self.generate_kwargs = {
@@ -28,15 +30,16 @@ class BSCInteractor:
         }
         logger.info(f"Creating with endpoint  {self.api_endpoint} and model_name {self.model_name}")
         self.stream = stream
-        # Builds OpenAI client with the provided API endpoint and key
+        #  Builds OpenAI client with the provided API endpoint and key
         self.client = openai.OpenAI(
             base_url=self.api_endpoint,
             api_key=api_key
-        )    
+        )
+
     def __call__(self, documents, history, llm, system_prompt, audio=None, language=None):
         messages = self.build_messages(documents, history, llm, system_prompt, audio)
         return self.chat_completion(messages)
-    
+
     def build_messages(self, documents, history, llm, system_prompt, audio):
         context = ""
         if len(documents) > 0:
@@ -47,13 +50,13 @@ class BSCInteractor:
                     num_tokens = apx_num_tokens_from_messages(messages)  # todo for HF, it is approximation
                 except:
                     num_tokens = len(str(messages).split()) * 2
-                max_ctx = settings.LLM_CONTEXT_LENGHTS.get(llm, 4096) # default fallback to 4096
+                max_ctx = settings.LLM_CONTEXT_LENGHTS.get(llm, 4096)  # default fallback to 4096
                 if num_tokens + 512 < max_ctx:
                     break
                 documents.pop()
         messages = self._construct_message_list(llm, system_prompt, context, history, audio)
         return messages
-    
+
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         raise NotImplementedError
 
@@ -185,6 +188,7 @@ class BSCInteractor:
 
         return completion
 
+
 class OlmoInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         messages = []
@@ -203,10 +207,10 @@ class OlmoInteractor(BSCInteractor):
                 messages.append({
                     "role": "user",
                     "content": [
-                       {
-                           "type": "text",
-                           "text": q
-                       }
+                        {
+                            "type": "text",
+                            "text": q
+                        }
                     ]
 
                 })
@@ -216,6 +220,7 @@ class OlmoInteractor(BSCInteractor):
                     "content": reverse_doc_links(a),
                 })
         return messages
+
 
 class EurollmInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
@@ -235,10 +240,10 @@ class EurollmInteractor(BSCInteractor):
                 messages.append({
                     "role": "user",
                     "content": [
-                       {
-                           "type": "text",
-                           "text": q
-                       },
+                        {
+                            "type": "text",
+                            "text": q
+                        },
                     ]
 
                 })
@@ -248,6 +253,7 @@ class EurollmInteractor(BSCInteractor):
                     "content": reverse_doc_links(a),
                 })
         return messages
+
 
 class QwenInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
@@ -267,10 +273,10 @@ class QwenInteractor(BSCInteractor):
                 messages.append({
                     "role": "user",
                     "content": [
-                    #    {
-                      #      "type": "text",
-                     #       "text": q
-                     #   },
+                        #    {
+                        #      "type": "text",
+                        #       "text": q
+                        #   },
                         {
                             "type": "input_audio",
                             "input_audio": {
@@ -287,6 +293,7 @@ class QwenInteractor(BSCInteractor):
                     "content": reverse_doc_links(a),
                 })
         return messages
+
 
 class GemmaInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
@@ -306,6 +313,7 @@ class GemmaInteractor(BSCInteractor):
                     "content": reverse_doc_links(a),
                 })
         return messages
+
 
 class ApertusInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
@@ -360,6 +368,7 @@ class SDialogInteractor(BSCInteractor):
                 })
         return messages
 
+
 class SalamandraInteractor(BSCInteractor):
     def _construct_message_list(self, llm, system_prompt, context, history, audio):
         if context:
@@ -384,17 +393,18 @@ class SalamandraInteractor(BSCInteractor):
                 })
         return messages
 
+
 class WhisperInteractor(BSCInteractor):
     def __init__(
-        self,
-        api_endpoint,
-        model_name,
-        api_key=None,
-        max_tokens=None,
-        temperature=None,
-        top_p=None,
-        stream=False,
-        transcription_kwargs=None,
+            self,
+            api_endpoint,
+            model_name,
+            api_key=None,
+            max_tokens=None,
+            temperature=None,
+            top_p=None,
+            stream=False,
+            transcription_kwargs=None,
     ):
         super().__init__(api_endpoint, model_name, api_key, max_tokens, temperature, top_p, stream)
         self.transcription_kwargs = transcription_kwargs or {}
@@ -419,14 +429,30 @@ class WhisperInteractor(BSCInteractor):
         return transcription.text
 
 
+class MeusliInteractor(WhisperInteractor):
+    def __init__(self, api_endpoint, model_name="meusli-slam-asr", api_key=None,
+                 max_tokens=None, temperature=None, top_p=None, stream=False,
+                 transcription_kwargs=None):
+        super().__init__(
+            api_endpoint,
+            model_name,
+            api_key,
+            max_tokens,
+            temperature,
+            top_p,
+            stream,
+            transcription_kwargs
+        )
+
+
 class WhisperXInteractor:
     def __init__(self, api_endpoint, model_name, api_key=None, **kwargs):
         self.model_name = model_name
         self.api_endpoint = api_endpoint.rstrip("/")
         self.api_key = api_key
-        self.generate_kwargs = {"timeout": 600, "diarize": True} # default values for whisperx
-        self.generate_kwargs.update(kwargs) # override defaults or add new params
-        #self.base_url = self._normalize_base_url(self.api_endpoint)
+        self.generate_kwargs = {"timeout": 600, "diarize": True}  #  default values for whisperx
+        self.generate_kwargs.update(kwargs)  #  override defaults or add new params
+        # self.base_url = self._normalize_base_url(self.api_endpoint)
         self.base_url = self.api_endpoint
         # Builds OpenAI client with the provided API endpoint and key
         self.client = openai.OpenAI(
@@ -440,7 +466,7 @@ class WhisperXInteractor:
         self.generate_kwargs.update(params)
 
     @staticmethod
-    def _speaker_label(speaker_code): # Normalizes speaker identifiers into Speaker N format
+    def _speaker_label(speaker_code):  #  Normalizes speaker identifiers into Speaker N format
         if speaker_code is None:
             return None
         if isinstance(speaker_code, (int, float)) and not isinstance(speaker_code, bool):
@@ -502,22 +528,22 @@ class WhisperXInteractor:
         if audio is None:
             raise ValueError("WhisperX requires an audio input.")
 
-        # Convert audio to WAV if necessary, as WhisperX expects WAV input
+        #  Convert audio to WAV if necessary, as WhisperX expects WAV input
         audio_bytes = bytes(audio)
         audio_format = detect_audio_format(audio_bytes)
         if audio_format != "wav":
             audio_bytes = bytes_to_wav(audio_bytes, audio_format)
             audio_format = "wav"
 
-        # Prepare audio file for transcription request
+        #  Prepare audio file for transcription request
         audio_file = BytesIO(audio_bytes)
-        audio_file.name = f"input.{audio_format}" # important for multipart upload metadata
+        audio_file.name = f"input.{audio_format}"  # important for multipart upload metadata
 
         timeout = self.generate_kwargs.get("timeout")
-        diarize = self.generate_kwargs.get("diarize") # True
+        diarize = self.generate_kwargs.get("diarize")  # True
 
         extra_body = {"diarize": diarize}
-        # Include additional parameters for the transcription request if provided
+        #  Include additional parameters for the transcription request if provided
         for key in ("min_speakers", "max_speakers", "pretty"):
             value = self.generate_kwargs.get(key)
             if value is not None:
