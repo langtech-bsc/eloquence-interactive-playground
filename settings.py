@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     EMBEDDING_SIZES: dict = {
         "sentence-transformers/all-MiniLM-L6-v2": 384,
         "sentence-transformers/all-mpnet-base-v2": 768,
+        "BAAI/bge-m3": 1024,
     }
 
     LLM_CONTEXT_LENGHTS: dict = {
