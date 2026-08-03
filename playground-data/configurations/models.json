@@ -78,5 +78,21 @@
         "api_key": "",
         "api_endpoint": "http://84.88.53.199:9102/v1",
         "interface": "text"
+    },
+    {
+        "model_name": "sqa-salamandra-2b",
+        "interactor": "sqa_salamandra_2b",
+        "display_name": "SQA Salamandra 2B",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:9082/v1",
+        "interface": "audio"
+    },
+    {
+        "model_name": "sqa-salamandra-7b",
+        "interactor": "sqa_salamandra_7b",
+        "display_name": "SQA Salamandra 7B",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:9083/v1",
+        "interface": "audio"
     }
 ]
