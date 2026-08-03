@@ -15,6 +15,8 @@ class LocalTaskHandler:
         self.task_config = task_config
         
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
+        retrieval_query = params.pop("retrieval_query", None) or query
+
         if not check_llm_interface(llm_name, self.task_config["interface"], available_llms=self.llm_handler.available_llms):
             raise ValueError(f"LLM {llm_name} does not support the required interface {self.task_config['interface']}.")
         if self.task_config.get("interface") == "audio":
@@ -40,9 +42,17 @@ class LocalTaskHandler:
         documents_metadata = []
         if self.task_config["RAG"]:
             if hasattr(self.retriever, "search_with_metadata"):
-                documents, documents_metadata = self.retriever.search_with_metadata(index_name, query, docs_k)
+                documents, documents_metadata = self.retriever.search_with_metadata(
+                    index_name,
+                    retrieval_query,
+                    docs_k,
+                )
             else:
-                documents = self.retriever.search(index_name, query, docs_k)
+                documents = self.retriever.search(
+                    index_name,
+                    retrieval_query,
+                    docs_k,
+                )
         # Retrieved RAG snippets reach the LLM here
         llm_response = self.llm_handler(
             llm_name,

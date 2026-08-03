@@ -1,6 +1,6 @@
 {
     "name": "RAG",
     "RAG": true,
-    "interface": "text",
+    "interface": ["text", "audio"],
     "service": "local"
 }

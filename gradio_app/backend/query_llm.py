@@ -8,6 +8,8 @@ from gradio_app.backend.BSCInteract import (
     OlmoInteractor,
     EurollmInteractor,
     QwenInteractor,
+    SQASalamandra2BInteractor,
+    SQASalamandra7BInteractor,
     SalamandraInteractor,
     GemmaInteractor,
     ApertusInteractor,
@@ -33,6 +35,8 @@ class LLMHandler:
         "whisperx": WhisperXInteractor,
         "sdialog": SDialogInteractor,
         "meusli": MeusliInteractor,
+        "sqa_salamandra_2b": SQASalamandra2BInteractor,
+        "sqa_salamandra_7b": SQASalamandra7BInteractor,
     }
 
     def __init__(self, available_llms) -> None:
@@ -53,6 +57,7 @@ class LLMHandler:
             language = params["language"]
             del params["language"]
         if llm is None:
+            # Inside get_llm_generator creates the model interactor based on the configuration
             llm = self.get_llm_generator(llm_name, task_name=task_name)
             self._cache[cache_key] = llm
         llm.set_params(**params)
@@ -105,6 +110,7 @@ class LLMHandler:
                 api_key=model_entry.get("api_key"),
             )
 
+        # creates the interactor based on the interactor name specified in the configuration
         interactor_cls = self.INTERACTOR_CLASSES.get(interactor)
         if interactor_cls is not None:
             return interactor_cls(**base_kwargs)

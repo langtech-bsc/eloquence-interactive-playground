@@ -523,6 +523,27 @@ async () => {
         return String(modelName).toLowerCase().includes("whisperx");
     };
 
+    const supportsInterface = (taskConfig, interfaceName) => {
+        if (!taskConfig) return false;
+        const interfaces = Array.isArray(taskConfig.interface)
+            ? taskConfig.interface
+            : [taskConfig.interface];
+        return interfaces.includes(interfaceName);
+    };
+
+    const getRagSpeechModel = () => {
+        return getSelectedRadioValue("rag_speech_llm_name");
+    };
+
+    const isRagSpeechInteraction = (taskConfig) => {
+        return (
+            taskConfig &&
+            taskConfig.name === "RAG" &&
+            supportsInterface(taskConfig, "audio") &&
+            !!getRagSpeechModel()
+        );
+    };
+
     // Auto-scroll the chatbot window
     globalThis.Scrolldown = function() {
         const targetNode = document.querySelector('[aria-label="chatbot conversation"]');
@@ -543,8 +564,13 @@ async () => {
             return;
         }
         const taskConfig = getTaskConfig();
-        if (!taskConfig || taskConfig.interface !== "audio") {
+        if (!taskConfig || !supportsInterface(taskConfig, "audio")) {
             status.innerText = "Please select an audio task before recording.";
+            return;
+        }
+        const ragSpeechInteraction = isRagSpeechInteraction(taskConfig);
+        if (taskConfig.name === "RAG" && !ragSpeechInteraction) {
+            status.innerText = "Please select an Available Speech LLM before recording.";
             return;
         }
         const audioMode = taskConfig.audio_mode;
@@ -554,7 +580,9 @@ async () => {
             return;
         }
 
-        const selectedAudioModel = getSelectedRadioValue("llm_name");
+        const selectedAudioModel = ragSpeechInteraction
+            ? getRagSpeechModel()
+            : getSelectedRadioValue("llm_name");
         if (audioMode === "transcription" || (audioMode === "qa" && audioQaMode === "whisper_llm")) {
             if (!selectedAudioModel) {
                 status.innerText = "Please select a Whisper model before recording.";
@@ -666,7 +694,13 @@ async () => {
         if (!selected) return false;
         try {
             const config = JSON.parse(selected.value);
-            return config && config.interface === "audio";
+            if (!supportsInterface(config, "audio")) {
+                return false;
+            }
+            if (config.name === "RAG") {
+                return isRagSpeechInteraction(config);
+            }
+            return true;
         } catch (e) {
             return false;
         }

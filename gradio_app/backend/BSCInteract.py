@@ -393,19 +393,116 @@ class SalamandraInteractor(BSCInteractor):
                 })
         return messages
 
+class SQASalamandra2BInteractor(BSCInteractor):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
+        import requests
+        super().__init__(api_endpoint=api_endpoint, model_name=model_name, api_key=api_key, max_tokens=max_tokens, temperature=temperature, top_p=top_p, stream=stream)
+        self.sqa_client = requests.Session()
+        self.transcriptions_url = (
+            f"{api_endpoint.rstrip('/')}/audio/transcriptions"
+        )
+
+    def __call__(
+        self, documents, history, llm, system_prompt, audio, language=None,
+    ):
+        from io import BytesIO
+        from gradio_app.helpers import detect_audio_format, bytes_to_wav
+
+        if audio is None:
+            raise ValueError(
+                "SQA Salamandra 2B requires an audio question."
+            )
+
+        audio_bytes = bytes(audio)
+        audio_format = detect_audio_format(audio_bytes)
+        if audio_format != "wav":
+            audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+
+        audio_file = BytesIO(audio_bytes)
+
+        form_data = [
+            ("model", self.model_name),
+            *[
+                ("documents", str(document))
+                for document in documents
+            ],
+        ]
+
+        temperature = self.generate_kwargs.get("temperature")
+        if temperature is not None:
+            form_data.append(
+                ("temperature", str(temperature))
+            )
+
+        response = self.sqa_client.post(
+            self.transcriptions_url,
+            files={
+                "file": ("input.wav", audio_file, "audio/wav"),
+            },
+            data=form_data,
+            timeout=600,
+        )
+
+        response.raise_for_status()
+
+        return response.json()["text"]
+
+class SQASalamandra7BInteractor(BSCInteractor):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
+        import requests
+        super().__init__(api_endpoint=api_endpoint, model_name=model_name, api_key=api_key, max_tokens=max_tokens, temperature=temperature, top_p=top_p, stream=stream)
+        self.sqa_client = requests.Session()
+        self.transcriptions_url = (
+            f"{api_endpoint.rstrip('/')}/audio/transcriptions"
+        )
+
+    def __call__(
+        self, documents, history, llm, system_prompt, audio, language=None,
+    ):
+        from io import BytesIO
+        from gradio_app.helpers import detect_audio_format, bytes_to_wav
+
+        if audio is None:
+            raise ValueError(
+                "SQA Salamandra 7B requires an audio question."
+            )
+
+        audio_bytes = bytes(audio)
+        audio_format = detect_audio_format(audio_bytes)
+        if audio_format != "wav":
+            audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+
+        audio_file = BytesIO(audio_bytes)
+
+        form_data = [
+            ("model", self.model_name),
+            *[
+                ("documents", str(document))
+                for document in documents
+            ],
+        ]
+
+        temperature = self.generate_kwargs.get("temperature")
+        if temperature is not None:
+            form_data.append(
+                ("temperature", str(temperature))
+            )
+
+        response = self.sqa_client.post(
+            self.transcriptions_url,
+            files={
+                "file": ("input.wav", audio_file, "audio/wav"),
+            },
+            data=form_data,
+            timeout=600,
+        )
+
+        response.raise_for_status()
+
+        return response.json()["text"]
 
 class WhisperInteractor(BSCInteractor):
-    def __init__(
-            self,
-            api_endpoint,
-            model_name,
-            api_key=None,
-            max_tokens=None,
-            temperature=None,
-            top_p=None,
-            stream=False,
-            transcription_kwargs=None,
-    ):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False, transcription_kwargs=None):
         super().__init__(api_endpoint, model_name, api_key, max_tokens, temperature, top_p, stream)
         self.transcription_kwargs = transcription_kwargs or {}
 
@@ -415,11 +512,15 @@ class WhisperInteractor(BSCInteractor):
 
         logger.info("WhisperInteractor language=%s", language)
         audio_bytes = bytes(audio)
+        if not audio_bytes:
+            raise ValueError("Whisper requires a non-empty audio input.")
         audio_format = detect_audio_format(audio_bytes)
         if audio_format != "wav":
             audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+            audio_format = "wav"
         audio = BytesIO(audio_bytes)
-        audio.name = "input." + audio_format
+        audio.name = "input.wav"
+        audio.seek(0)
         transcription = self.client.audio.transcriptions.create(
             file=audio,
             model=self.model_name,

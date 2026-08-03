@@ -21,6 +21,13 @@ from settings import settings, USER_FEEDBACK_FILE, USER_HISTORY_FILE, USER_PROMP
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+LANGUAGE_CHOICES = [
+    ("English", "en"),
+    ("Spanish", "es"),
+    ("Italian", "it"),
+    ("Greek", "el"),
+    ("Serbian", "sr"),
+]
 dynamic_data = {
     "retriever_instance": None,
     "feedback_df": None,
@@ -96,14 +103,40 @@ def load_task(task_config):
     rag_enabled = task_config.get("name") == "RAG"
     is_summarization = task_config.get("name") == "Summarization"
     audio_mode = task_config.get("audio_mode")
-    if task_config["interface"] == "audio":
+    interfaces = task_config.get("interface", "text")
+    interfaces = interfaces if isinstance(interfaces, list) else [interfaces]
+    if interfaces == ["audio"]:
         return (
             gr.update(visible=False),
             gr.update(visible=True),
             gr.update(interactive=True),
-            gr.update(visible=True),
+            gr.update(
+                choices=LANGUAGE_CHOICES,
+                value="en",
+                visible=True,
+            ),
             gr.update(visible=False),
             gr.update(visible=audio_mode == "qa", value="whisper_llm" if audio_mode == "qa" else None),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=rag_enabled),
+            gr.update(visible=is_summarization),
+            gr.update(visible=is_summarization),
+            gr.update(visible=False),
+            gr.update(visible=rag_enabled),
+        )
+    elif "text" in interfaces and "audio" in interfaces:
+        return (
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(interactive=True),
+            gr.update(
+                choices=LANGUAGE_CHOICES,
+                value="en",
+                visible=False,
+            ),
+            gr.update(visible=True),
+            gr.update(visible=False, value=None),
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
@@ -117,7 +150,11 @@ def load_task(task_config):
             gr.update(visible=True),
             gr.update(visible=False),
             gr.update(interactive=True),
-            gr.update(visible=False),
+            gr.update(
+                choices=LANGUAGE_CHOICES,
+                value="en",
+                visible=False,
+            ),
             gr.update(visible=True),
             gr.update(visible=False, value=None),
             gr.update(visible=rag_enabled),
@@ -161,7 +198,8 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
         top_p=kwargs.get("top_p", 0.95),
         max_tokens=kwargs.get("max_tokens", 300),
         audio=audio_data,
-        language=language
+        language=language,
+        retrieval_query=kwargs.get("retrieval_query"),
     )
 
     for stream_item in stream:
@@ -194,25 +232,30 @@ def upload_file_for_ingest(files: List[str]) -> gr.update:
         out_files.append(os.path.basename(file_path.name))
     return gr.update(value=", ".join(out_files))
 
-
-def validate_ingestion_inputs(index_name, embedder, files, chunk_length, percentile, retriever_addr):
+def validate_ingestion_inputs(
+    index_name, embedder, files, chunk_length, percentile, retriever_addr,
+):
     """Validates all inputs on the Ingestion tab before starting the process."""
     if not all([index_name, embedder, files, retriever_addr]):
         raise gr.Error(
-            "Please fill all required fields: Index Name, Embedder, Vector Store, and upload at least one file.")
+            "Please fill all required fields: Index Name, Embedder, Vector "
+            "Store, and upload at least one file."
+        )
 
     for f in files:
         if not any(f.name.endswith(suff) for suff in settings.SUPPORTED_FILE_TYPES):
             raise gr.Error(f"File '{os.path.basename(f.name)}' has an unsupported file type.")
 
     try:
-        if not 0 < int(chunk_length) <= 2000: raise ValueError()
-    except ValueError:
+        if not 0 < int(chunk_length) <= 2000:
+            raise ValueError()
+    except (TypeError, ValueError):
         raise gr.Error("'Chunk Length' must be an integer between 1 and 2000.")
 
     try:
-        if not 0 < int(percentile) <= 100: raise ValueError()
-    except ValueError:
+        if not 0 < int(percentile) <= 100:
+            raise ValueError()
+    except (TypeError, ValueError):
         raise gr.Error("'Percentile' must be an integer between 1 and 100.")
 
 
@@ -442,7 +485,8 @@ def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config,
     if not llm: raise gr.Error("Please select an LLM.")
     if not task_config: raise gr.Error("Please select a Task Configuration.")
     task_config_dict = json.loads(task_config)
-    if task_config_dict.get("interface") != "audio":
+    model_interface = llm_handler.available_llms.get(llm, {}).get("interface")
+    if model_interface != "audio":
         if not text.strip():
             raise gr.Error("Query cannot be empty.")
     else:
@@ -517,20 +561,61 @@ def _collect_llm_response(response):
     except TypeError:
         return str(response)
 
+def _transcribe_audio_for_retrieval(audio, language=None):
+    whisper_name = next(
+        (
+            name
+            for name, entry in llm_handler.available_llms.items()
+            if entry.get("interactor") == "whisper"
+        ),
+        None,
+    )
+    if whisper_name is None:
+        raise ValueError(
+            "SQA Salamandra retrieval requires a configured Whisper model."
+        )
 
-def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str,
-             language=None, audio_qa_mode=None, text_llm_name=None):
+    transcription = _collect_llm_response(
+        llm_handler(
+            whisper_name,
+            "",
+            [],
+            [],
+            audio=audio,
+            language=language,
+        )
+    ).strip()
+    if not transcription:
+        raise ValueError(
+            "Whisper returned an empty transcription for RAG retrieval."
+        )
+    return transcription
+
+def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str, language=None, audio_qa_mode=None, text_llm_name=None):
     """Handles user interaction in the Gradio chat interface."""
     task_config = json.loads(task_config_str)
     history = history or []
 
     # Handle audio interface if needed
     audio_in = None
-    if task_config.get("interface") == "audio":
+    retrieval_query = None
+    model_entry = llm_handler.available_llms.get(llm_name, {})
+    model_interface = model_entry.get("interface")
+    interactor = model_entry.get("interactor")
+    if model_interface == "audio":
         audio_in = bytes(deepcopy(dynamic_data.get("audio_buffer", [])))
         dynamic_data["audio_buffer"] = []
         audio_mode = task_config.get("audio_mode")
-        if audio_mode == "transcription":
+        if task_config.get("name") == "RAG" and interactor in {
+            "sqa_salamandra_2b",
+            "sqa_salamandra_7b",
+        }:
+            input_text = "Give an answer to the spoken query."
+            retrieval_query = _transcribe_audio_for_retrieval(
+                audio_in,
+                language=language,
+            )
+        elif audio_mode == "transcription":
             input_text = "Transcribe the audio."
         elif audio_mode == "diarization":
             input_text = "Diarize the audio."
@@ -559,7 +644,8 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
     stream = _process_llm_request(
         llm_name, system_prompt, history, input_text, docs_k, index_name,
         task_config, dynamic_data["retriever_instance"],
-        temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in, language=language
+        temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in,
+        language=language, retrieval_query=retrieval_query,
     )
 
     for updated_history, documents in stream:
@@ -673,20 +759,6 @@ def _get_online_models(available_llms):
     probe_models = str(os.environ.get("ELOQ_PROBE_MODELS_ON_LOAD", "true")).strip().lower() in {"1", "true", "yes",
                                                                                                 "on"}
 
-    def _build_silent_wav(sample_rate: int = 16000, duration_ms: int = 120) -> bytes:
-        import io
-        import wave
-
-        frame_count = max(1, int(sample_rate * (duration_ms / 1000.0)))
-        pcm_silence = b"\x00\x00" * frame_count  # 16-bit mono silence
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(pcm_silence)
-        return buf.getvalue()
-
     def _interactor_name(model_name: str) -> str:
         entry = available_llms.get(model_name, {})
         return str(entry.get("interactor", "")).strip().lower()
@@ -695,58 +767,62 @@ def _get_online_models(available_llms):
         return _interactor_name(model_name) == "sdialog"
 
     def _is_model_online(model_name):
-        logger.info("Checking availability of %s", model_name)
-        interactor = _interactor_name(model_name)
-        try:
-            if check_llm_interface(model_name, "text", available_llms=llm_handler.available_llms):
-                task_handler = get_task_handler(settings.BASIC_CONFIG, llm_handler,
-                                                dynamic_data.get("retriever_instance"))
-                query = history_user_entry = "hello, say one random words"
-                history = [[history_user_entry, ""]]
-                for part, documents in task_handler(model_name,
-                                                    "",
-                                                    history,
-                                                    query,
-                                                    0,
-                                                    "index_name",
-                                                    max_tokens=2):
-                    return True
-                return True
-            elif check_llm_interface(model_name, "audio", available_llms=llm_handler.available_llms):
-                # WhisperX supports diarization audio mode, so probe with diarization if possible.
-                audio_mode = "diarization" if interactor == "whisperx" else "transcription"
-                task_config = {
-                    "interface": "audio",
-                    "RAG": False,
-                    "service": "local",
-                    "audio_mode": audio_mode,
-                }
-                task_handler = get_task_handler(task_config, llm_handler, dynamic_data.get("retriever_instance"))
-                sample_audio = _build_silent_wav()
-                query = "Diarize the audio." if audio_mode == "diarization" else "Describe the audio."
-                history = [[query, ""]]
-                for part, documents in task_handler(
-                        model_name,
-                        "",
-                        history,
-                        query,
-                        0,
-                        "index_name",
-                        max_tokens=2,
-                        audio=sample_audio,
-                        language="en",
-                ):
-                    return True
-                return True
-        except Exception as e:
-            logger.error("Error checking model %s: %s", model_name, e)
-            return False
+        import requests
 
+        logger.info("Checking availability of %s", model_name)
+        entry = available_llms[model_name]
+        api_endpoint = entry["api_endpoint"].rstrip("/")
+        base_endpoint = (
+            api_endpoint[:-3]
+            if api_endpoint.endswith("/v1")
+            else api_endpoint
+        )
+        headers = {}
+        if entry.get("api_key"):
+            headers["Authorization"] = f"Bearer {entry['api_key']}"
+
+        check_urls = [
+            f"{base_endpoint}/health",
+            f"{api_endpoint}/models",
+        ]
+        for check_url in check_urls:
+            try:
+                response = requests.get(
+                    check_url,
+                    headers=headers,
+                    timeout=5,
+                )
+                if response.ok:
+                    logger.info(
+                        "Model %s is available via %s",
+                        model_name,
+                        check_url,
+                    )
+                    return True
+            except requests.RequestException as exc:
+                logger.debug(
+                    "Availability check failed for %s at %s: %s",
+                    model_name,
+                    check_url,
+                    exc,
+                )
+
+        logger.warning("Model %s did not pass an availability check", model_name)
         return False
 
     choices = [(llm, llm) for llm in available_llms.keys()]
     if probe_models:
-        probed_online_choices = [choice for choice in choices if _is_model_online(choice[1])]
+        max_workers = min(8, max(1, len(choices)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            probe_results = executor.map(
+                _is_model_online,
+                [choice[1] for choice in choices],
+            )
+            probed_online_choices = [
+                choice
+                for choice, is_online in zip(choices, probe_results)
+                if is_online
+            ]
     else:
         # Avoid cross-endpoint health probes on page load unless explicitly enabled.
         probed_online_choices = choices
@@ -754,8 +830,15 @@ def _get_online_models(available_llms):
     # Preserve all online models (including task-specific ones) for task-level filtering.
     dynamic_data["online_llms"] = [c[1] for c in probed_online_choices]
 
-    # Keep task-specific models out of global/default model lists.
-    online_choices = [choice for choice in probed_online_choices if not _is_sdialog_model(choice[1])]
+    # The initial task is Basic LLM, so initialize its selector with text models.
+    online_choices = [
+        choice
+        for choice in probed_online_choices
+        if (
+            not _is_sdialog_model(choice[1])
+            and available_llms[choice[1]].get("interface") == "text"
+        )
+    ]
     default_model = online_choices[0][1] if online_choices else None
     return gr.Radio(label="Available LLMs", choices=online_choices, value=default_model), dynamic_data["online_llms"]
 
@@ -764,7 +847,16 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
     """Update LLM choices based on task interface."""
     task_config = json.loads(task_config_str) if task_config_str else {}
     task_name = task_config.get("name")
-    interface = "audio" if task_config.get("interface") == "audio" else "text"
+    if task_name == "RAG":
+        return gr.update(
+            label="Available LLMs",
+            choices=[],
+            value=None,
+            visible=False,
+        )
+
+    interface = task_config.get("interface", "text")
+    interfaces = interface if isinstance(interface, list) else [interface]
     audio_mode = task_config.get("audio_mode")
 
     def _interactor_name(model_name: str) -> str:
@@ -783,46 +875,122 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
     def _is_sdialog_model(model_name: str) -> bool:
         return _interactor_name(model_name) == "sdialog"
 
-    online_llms = dynamic_data.get("online_llms", [])
-    if online_llms:
-        choices = [
-            (name, name)
-            for name in online_llms
-            if check_llm_interface(name, interface, available_llms=llm_handler.available_llms)
-        ]
-    else:
-        choices = [
-            (m["display_name"], m["display_name"])
-            for m in llm_handler.available_llms.values()
-            if m.get("interface") == interface
-        ]
+    def _is_eligible(model_name):
+        if not check_llm_interface(
+            model_name,
+            interface,
+            available_llms=llm_handler.available_llms,
+        ):
+            return False
 
-    if task_name == "SDialog":
-        choices = [choice for choice in choices if _is_sdialog_model(choice[1])]
-    else:
-        choices = [choice for choice in choices if not _is_sdialog_model(choice[1])]
+        if task_name == "SDialog":
+            if not _is_sdialog_model(model_name):
+                return False
+        elif _is_sdialog_model(model_name):
+            return False
 
-    if interface == "audio" and audio_mode:
+        if interfaces != ["audio"] or not audio_mode:
+            return True
+
         if audio_mode == "transcription":
-            choices = [choice for choice in choices if
-                       (_is_whisper_model(choice[1]) or _is_meusli_model(choice[1])) and not _is_whisperx_model(
-                           choice[1])]
-        elif audio_mode == "diarization":
-            choices = [choice for choice in choices if _is_whisperx_model(choice[1])]
-        elif audio_mode == "qa":
+            return (
+                _is_whisper_model(model_name)
+                or _is_meusli_model(model_name)
+            ) and not _is_whisperx_model(model_name)
+        if audio_mode == "diarization":
+            return _is_whisperx_model(model_name)
+        if audio_mode == "qa":
             if audio_qa_mode == "whisper_llm":
-                choices = [choice for choice in choices if
-                           _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])]
-            else:
-                choices = [
-                    choice
-                    for choice in choices
-                    if not _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])
-                ]
+                return _is_whisper_model(model_name) and not _is_whisperx_model(model_name)
+            return not _is_whisper_model(model_name) and not _is_whisperx_model(model_name)
+        return True
+
+    choices = [
+        (name, name)
+        for name in dynamic_data.get("online_llms", [])
+        if _is_eligible(name)
+    ]
 
     default_value = choices[0][1] if choices else None
     return gr.update(choices=choices, value=default_value, visible=True)
 
+def update_rag_llm_choices(task_config_str: str):
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    if task_config.get("name") != "RAG":
+        hidden = gr.update(choices=[], value=None, visible=False)
+        return hidden, hidden
+
+    text_choices = []
+    speech_choices = []
+    for model_name in dynamic_data.get("online_llms", []):
+        entry = llm_handler.available_llms.get(model_name, {})
+        interactor = str(entry.get("interactor", "")).strip().lower()
+
+        if entry.get("interface") == "text" and interactor != "sdialog":
+            text_choices.append((model_name, model_name))
+        elif interactor in {
+            "sqa_salamandra_2b",
+            "sqa_salamandra_7b",
+        }:
+            speech_choices.append((model_name, model_name))
+
+    return (
+        gr.update(
+            choices=text_choices,
+            value=None,
+            visible=True,
+        ),
+        gr.update(
+            choices=speech_choices,
+            value=None,
+            visible=True,
+        ),
+    )
+
+def select_rag_text_model(model_name, task_config_str):
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    if task_config.get("name") != "RAG" or not model_name:
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+        )
+    dynamic_data["audio_buffer"] = []
+    return (
+        gr.update(choices=[model_name], value=model_name),
+        gr.update(value=None),
+        gr.update(visible=True),
+        gr.update(visible=False),
+        gr.update(
+            choices=LANGUAGE_CHOICES,
+            value="en",
+            visible=False,
+        ),
+    )
+
+def select_rag_speech_model(model_name, task_config_str):
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    if task_config.get("name") != "RAG" or not model_name:
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+        )
+    return (
+        gr.update(choices=[model_name], value=model_name),
+        gr.update(value=None),
+        gr.update(visible=False),
+        gr.update(visible=True),
+        gr.update(
+            choices=[("Spanish", "es")],
+            value="es",
+            visible=True,
+        ),
+    )
 
 def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}
@@ -836,25 +1004,14 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
     if not (interface == "audio" and audio_mode == "qa" and audio_qa_mode == "whisper_llm"):
         return gr.update(visible=False, value=None)
 
-    online_llms = dynamic_data.get("online_llms", [])
-    if online_llms:
-        choices = [
-            (name, name)
-            for name in online_llms
-            if check_llm_interface(name, "text", available_llms=llm_handler.available_llms)
-        ]
-    else:
-        choices = [
-            (m["display_name"], m["display_name"])
-            for m in llm_handler.available_llms.values()
-            if m.get("interface") == "text"
-        ]
-
-    filtered_choices = []
-    for label, value in choices:
-        is_sdialog_model = _interactor_name(value) == "sdialog"
-        if not is_sdialog_model:
-            filtered_choices.append((label, value))
+    filtered_choices = [
+        (name, name)
+        for name in dynamic_data.get("online_llms", [])
+        if (
+            llm_handler.available_llms.get(name, {}).get("interface") == "text"
+            and _interactor_name(name) != "sdialog"
+        )
+    ]
 
     default_value = filtered_choices[0][1] if filtered_choices else None
     return gr.update(choices=filtered_choices, value=default_value, visible=True)

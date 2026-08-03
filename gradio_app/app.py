@@ -44,9 +44,13 @@ from gradio_app.app_handlers import (
     llm_handler,
     load_task,
     update_llm_choices,
+    update_rag_llm_choices,
+    select_rag_text_model,
+    select_rag_speech_model,
     update_text_llm_choices,
     update_llm_params_visibility,
     update_rag_params_visibility,
+    LANGUAGE_CHOICES,
 )
 
 # --- Logging ---
@@ -224,13 +228,80 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
     history = kwargs.get("history") or []
     query = kwargs.get("input_text", "")
     audio_data = await audio_file.read() if audio_file else None
+    retrieval_query = None
+    model_entry = available_llms.get(kwargs["llm_name"], {})
+    model_interface = model_entry.get("interface")
+    interactor = model_entry.get("interactor")
 
-    if task_config.get("interface") == "audio" and audio_data:
+    if model_interface == "audio" and audio_data:
         audio_mode = task_config.get("audio_mode")
-        if audio_mode == "transcription":
+        if task_config.get("name") == "RAG" and interactor in {
+            "sqa_salamandra_2b",
+            "sqa_salamandra_7b",
+        }:
+            query = kwargs.get("input_text")
+            whisper_name = next(
+                (
+                    name
+                    for name, entry in available_llms.items()
+                    if entry.get("interactor") == "whisper"
+                ),
+                None,
+            )
+            if whisper_name is None:
+                raise ValueError(
+                    "SQA Salamandra retrieval requires a configured Whisper model."
+                )
+
+            retrieval_query = llm_handler(
+                whisper_name,
+                "",
+                [],
+                [],
+                audio=audio_data,
+                language=kwargs.get("language"),
+            )
+            retrieval_query = str(retrieval_query).strip()
+            if not retrieval_query:
+                raise ValueError(
+                    "Whisper returned an empty transcription for RAG retrieval."
+                )
+        elif audio_mode == "transcription":
             query = "Transcribe the audio."
         elif audio_mode == "diarization":
             query = "Diarize the audio."
+        elif audio_mode == "qa": # Audio QA with RAG
+            query = kwargs.get("input_text")
+            if interactor in {
+                "sqa_salamandra_2b",
+                "sqa_salamandra_7b",
+            }:
+                whisper_name = next(
+                    (
+                        name
+                        for name, entry in available_llms.items()
+                        if entry.get("interactor") == "whisper"
+                    ),
+                    None,
+                )
+                if whisper_name is None:
+                    raise ValueError(
+                        "SQA Salamandra retrieval requires a configured Whisper model."
+                    )
+
+                retrieval_query = llm_handler(
+                    whisper_name,
+                    "",
+                    [],
+                    [],
+                    audio=audio_data,
+                    language=kwargs.get("language"),
+                )
+                retrieval_query = str(retrieval_query).strip()
+                if not retrieval_query:
+                    raise ValueError(
+                        "Whisper returned an empty transcription for RAG retrieval."
+                    )
         else:
             query = "Describe the audio."
     
@@ -242,6 +313,7 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
         kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
         temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
         max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language"),
+        retrieval_query=retrieval_query,
         render_doc_links=kwargs.get("render_doc_links", True),
         metadata_sink=metadata_sink
     )
@@ -405,12 +477,21 @@ def list_embedders():
 
 
 @app.get("/retrieval", response_model=ResponseList)
-def direct_retrieval(query: str, index_name: str, retriever_address: str = "public", top_k: int = 5):
+def direct_retrieval(
+    query: str,
+    index_name: str,
+    retriever_address: str = "public",
+    top_k: int = 5,
+):
     """Performs a direct document search in the vector store."""
     if retriever_address == "public":
         retriever_address = settings.RETRIEVER_ENDPOINT
     retriever = RetrieverClient(endpoint=retriever_address)
-    docs = retriever.search(index_name=index_name, query=query, top_k=top_k)
+    docs = retriever.search(
+        index_name=index_name,
+        query=query,
+        top_k=top_k,
+    )
     return ResponseList(available=docs)
 
 
@@ -485,13 +566,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         audio_object = gr.HTML(html)
                         language_dropdown = gr.Dropdown(
                             label="Language",
-                            choices=[
-                                ("English", "en"),
-                                ("Spanish", "es"),
-                                ("Italian", "it"),
-                                ("Greek", "el"),
-                                ("Serbian", "sr"),
-                            ],
+                            choices=LANGUAGE_CHOICES,
                             value="en",
                             visible=False
                         )
@@ -521,6 +596,16 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                             elem_id="audio_qa_mode",
                         )
                         llm_name = gr.Radio(label="Available LLMs", visible=False, elem_id="llm_name")
+                        rag_text_llm_name = gr.Radio(
+                            label="Available Text LLMs",
+                            visible=False,
+                            elem_id="rag_text_llm_name",
+                        )
+                        rag_speech_llm_name = gr.Radio(
+                            label="Available Speech LLMs",
+                            visible=False,
+                            elem_id="rag_speech_llm_name",
+                        )
                         text_llm_name = gr.Radio(label="Text LLM", visible=False, elem_id="text_llm_name")
                         retrievers_radio = gr.Radio(label="Vector Store", visible=False)
                         index_name = gr.Radio(label="Index name", visible=False)
@@ -572,7 +657,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                 gr.Markdown("### Create a New Vector Store Index")
                 retrievers_radio_ing = gr.Radio(label="Target Vector Store")
                 index_name_ing = gr.Textbox(label="New Index Name")
-                embed_name = gr.Radio(choices=list(settings.EMBEDDING_SIZES.keys()), label="Embedder")
+                embed_name = gr.Radio(
+                    choices=list(settings.EMBEDDING_SIZES.keys()),
+                    label="Embedder",
+                )
                 upload_btt = gr.UploadButton("Select Files...", file_count="multiple")
                 uploaded_doc_ing = gr.Textbox(label="Selected File(s)", interactive=False)
 
@@ -680,6 +768,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         [task_config, audio_qa_mode],
         [llm_name],
     ).then(
+        update_rag_llm_choices,
+        [task_config],
+        [rag_text_llm_name, rag_speech_llm_name],
+    ).then(
         update_text_llm_choices,
         [task_config, audio_qa_mode],
         [text_llm_name],
@@ -704,6 +796,28 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         update_llm_params_visibility,
         [task_config, audio_qa_mode],
         [llm_params_accordion],
+    )
+    rag_text_llm_name.change(
+        select_rag_text_model,
+        [rag_text_llm_name, task_config],
+        [
+            llm_name,
+            rag_speech_llm_name,
+            text_column,
+            audio_column,
+            language_dropdown,
+        ],
+    )
+    rag_speech_llm_name.change(
+        select_rag_speech_model,
+        [rag_speech_llm_name, task_config],
+        [
+            llm_name,
+            rag_text_llm_name,
+            text_column,
+            audio_column,
+            language_dropdown,
+        ],
     )
     load_prompt_btn.click(refresh_system_prompts, [], [prompt_radio]).then(
         lambda: gr.update(visible=True), None, [prompt_panel]
@@ -750,13 +864,28 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     upload_btt.upload(upload_file_for_ingest, [upload_btt], [uploaded_doc_ing])
     run_ingestion.click(
         validate_ingestion_inputs,
-        [index_name_ing, embed_name, upload_btt, chunk_length, percentile, retrievers_radio_ing],
+        [
+            index_name_ing,
+            embed_name,
+            upload_btt,
+            chunk_length,
+            percentile,
+            retrievers_radio_ing,
+        ],
         None
     ).success(
         lambda: gr.update(value="Ingesting...", visible=True), None, [ingestion_status]
     ).then(
         perform_ingest,
-        [index_name_ing, chunk_length, percentile, embed_name, uploaded_doc_ing, splitting_strategy, retrievers_radio_ing],
+        [
+            index_name_ing,
+            chunk_length,
+            percentile,
+            embed_name,
+            uploaded_doc_ing,
+            splitting_strategy,
+            retrievers_radio_ing,
+        ],
         None
     ).then(
         lambda: gr.update(value="Success!", visible=True), None, [ingestion_status]
