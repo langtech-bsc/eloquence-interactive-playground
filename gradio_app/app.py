@@ -23,6 +23,7 @@ from gradio_app.app_handlers import (
     _process_llm_request,
     validate_interaction,
     interact,
+    clear_conversation,
     change_retriever,
     save_system_prompt,
     load_system_prompt_preview,
@@ -591,7 +592,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         task_config = gr.Radio(label="Task configuration", elem_id="task_config")
                         audio_qa_mode = gr.Radio(
                             label="Audio QA Mode",
-                            choices=[("Whisper + LLM", "whisper_llm"), ("Speech LLM", "speech_llm")],
+                            choices=[("Whisper + LLM", "whisper_llm"), ("Speech LLMs", "speech_llm")],
                             visible=False,
                             elem_id="audio_qa_mode",
                         )
@@ -738,7 +739,11 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
     
-    clear_btn.click(lambda: ([], "", gr.update(value=None), "", gr.update(visible=False)), [], [chatbot, system_prompt, prompt_radio, summary_box, rag_column])
+    clear_btn.click(
+        clear_conversation,
+        [task_config, llm_name],
+        [chatbot, system_prompt, prompt_radio, summary_box, rag_column],
+    )
     summarize_btn.click(
         summarize_conversation,
         [chatbot, llm_name, task_config, system_prompt, temp, top_p, max_tokens],
@@ -769,7 +774,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         [llm_name],
     ).then(
         update_rag_llm_choices,
-        [task_config],
+        [task_config, audio_qa_mode],
         [rag_text_llm_name, rag_speech_llm_name],
     ).then(
         update_text_llm_choices,
@@ -788,6 +793,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         update_llm_choices,
         [task_config, audio_qa_mode],
         [llm_name],
+    ).then(
+        update_rag_llm_choices,
+        [task_config, audio_qa_mode],
+        [rag_text_llm_name, rag_speech_llm_name],
     ).then(
         update_text_llm_choices,
         [task_config, audio_qa_mode],
@@ -810,7 +819,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     )
     rag_speech_llm_name.change(
         select_rag_speech_model,
-        [rag_speech_llm_name, task_config],
+        [rag_speech_llm_name, task_config, audio_qa_mode],
         [
             llm_name,
             rag_text_llm_name,

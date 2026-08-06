@@ -866,18 +866,36 @@ def _get_online_models(available_llms):
         for choice in probed_online_choices
         if (
             not _is_sdialog_model(choice[1])
+            and not _is_dialogue_manager_model(choice[1])
             and available_llms[choice[1]].get("interface") == "text"
         )
     ]
     default_model = online_choices[0][1] if online_choices else None
     return gr.Radio(label="Available LLMs", choices=online_choices, value=default_model), dynamic_data["online_llms"]
 
+def _dialogue_manager_session_id(request: gr.Request) -> str:
+    session_hash = getattr(request, "session_hash", None)
+    if not session_hash:
+        raise gr.Error("Unable to identify the current browser session.")
+
+    return f"gradio-{session_hash}"
+
+
+def clear_conversation(task_config_str, llm_name, request: gr.Request):
+    task = json.loads(task_config_str) if task_config_str else {}
+    if task.get("name") == "DM" and llm_name:
+        llm_handler.get_llm_generator(llm_name, task_name="DM").reset(
+            _dialogue_manager_session_id(request)
+        )
+    return [], "", gr.update(value=None), "", gr.update(visible=False)
 
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     """Update LLM choices based on task interface."""
     task_config = json.loads(task_config_str) if task_config_str else {}
     task_name = task_config.get("name")
-    if task_name == "RAG":
+    if task_name == "RAG" or (
+        task_name == "Audio QA" and audio_qa_mode == "speech_llm"
+    ):
         return gr.update(
             label="Available LLMs",
             choices=[],
@@ -952,9 +970,36 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
     default_value = choices[0][1] if choices else None
     return gr.update(choices=choices, value=default_value, visible=True)
 
-def update_rag_llm_choices(task_config_str: str):
+def update_rag_llm_choices(
+    task_config_str: str,
+    audio_qa_mode: str | None = None,
+):
     task_config = json.loads(task_config_str) if task_config_str else {}
-    if task_config.get("name") != "RAG":
+    task_name = task_config.get("name")
+
+    if task_name == "Audio QA" and audio_qa_mode == "speech_llm":
+        excluded_interactors = {
+            "whisper",
+            "whisperx",
+            "sqa_salamandra_2b",
+            "sqa_salamandra_7b",
+        }
+        speech_choices = []
+        for model_name in dynamic_data.get("online_llms", []):
+            entry = llm_handler.available_llms.get(model_name, {})
+            interactor = str(entry.get("interactor", "")).strip().lower()
+            if (
+                entry.get("interface") == "audio"
+                and interactor not in excluded_interactors
+            ):
+                speech_choices.append((model_name, model_name))
+
+        return (
+            gr.update(choices=[], value=None, visible=False),
+            gr.update(choices=speech_choices, value=None, visible=True),
+        )
+
+    if task_name != "RAG":
         hidden = gr.update(choices=[], value=None, visible=False)
         return hidden, hidden
 
@@ -1026,6 +1071,29 @@ def select_rag_speech_model(
             gr.update(),
             gr.update(),
         )
+
+    if task_name == "Audio QA" and audio_qa_mode == "speech_llm":
+        return (
+            gr.update(choices=[model_name], value=model_name, visible=False),
+            gr.update(value=None),
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(
+                choices=LANGUAGE_CHOICES,
+                value="en",
+                visible=True,
+            ),
+        )
+
+    if task_name != "RAG":
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+        )
+
     return (
         gr.update(choices=[model_name], value=model_name),
         gr.update(value=None),
