@@ -42,7 +42,7 @@
     {
         "model_name": "gemma-4-31B-it",
         "interactor": "gemma",
-        "display_name": "Gemma 4 (TID)",
+        "display_name": "Gemma 4 31B",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:10002/v1",
         "interface": "text"
@@ -94,5 +94,13 @@
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:9083/v1",
         "interface": "audio"
+    },
+    {
+        "model_name": "NurseLLM",
+        "interactor": "dialogue_manager",
+        "display_name": "NurseLLM",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:8004",
+        "interface": "text"
     }
 ]

@@ -101,7 +101,7 @@ def perform_ingest(
 def load_task(task_config):
     task_config = json.loads(task_config)
     rag_enabled = task_config.get("name") == "RAG"
-    is_summarization = task_config.get("name") == "Summarization"
+    show_summary = task_config.get("name") in {"Summarization", "DM"}
     audio_mode = task_config.get("audio_mode")
     interfaces = task_config.get("interface", "text")
     interfaces = interfaces if isinstance(interfaces, list) else [interfaces]
@@ -120,8 +120,8 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
-            gr.update(visible=is_summarization),
-            gr.update(visible=is_summarization),
+            gr.update(visible=show_summary),
+            gr.update(visible=show_summary),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -140,8 +140,8 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
-            gr.update(visible=is_summarization),
-            gr.update(visible=is_summarization),
+            gr.update(visible=show_summary),
+            gr.update(visible=show_summary),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -160,8 +160,8 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
-            gr.update(visible=is_summarization),
-            gr.update(visible=is_summarization),
+            gr.update(visible=show_summary),
+            gr.update(visible=show_summary),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -200,6 +200,7 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
         audio=audio_data,
         language=language,
         retrieval_query=kwargs.get("retrieval_query"),
+        session_id=kwargs.get("session_id")
     )
 
     for stream_item in stream:
@@ -506,7 +507,16 @@ def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config,
     if not (isinstance(top_p, (int, float)) and 0 <= top_p <= 1): raise gr.Error("Top-p must be between 0 and 1.")
 
 
-def summarize_conversation(history, llm_name, task_config_str, system_prompt, temp, top_p, max_tokens):
+def summarize_conversation(
+    history,
+    llm_name,
+    task_config_str,
+    system_prompt,
+    temp,
+    top_p,
+    max_tokens,
+    request: gr.Request,
+):
     """Generates a summary for the full chat history using the selected LLM."""
     if not llm_name:
         raise gr.Error("Please select an LLM.")
@@ -516,6 +526,16 @@ def summarize_conversation(history, llm_name, task_config_str, system_prompt, te
     task_config = json.loads(task_config_str) if task_config_str else settings.BASIC_CONFIG
     if task_config.get("interface") != "text":
         raise gr.Error("Summarization is only supported for text tasks.")
+
+    if task_config.get("name") == "DM":
+        payload = llm_handler.get_llm_generator(
+            llm_name,
+            task_name="DM",
+        ).end(_dialogue_manager_session_id(request))
+        summary = payload.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            raise gr.Error("The dialogue manager returned an empty summary.")
+        return summary.strip()
 
     turns = []
     for user_msg, assistant_msg in history:
@@ -591,7 +611,7 @@ def _transcribe_audio_for_retrieval(audio, language=None):
         )
     return transcription
 
-def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str, language=None, audio_qa_mode=None, text_llm_name=None):
+def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str, language=None, audio_qa_mode=None, text_llm_name=None, request: gr.Request = None):
     """Handles user interaction in the Gradio chat interface."""
     task_config = json.loads(task_config_str)
     history = history or []
@@ -641,11 +661,15 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
         else:
             input_text = "Transcribe and respond to the audio."
 
+    session_id = None
+    if task_config.get("name") == "DM":
+        session_id = _dialogue_manager_session_id(request)
+
     stream = _process_llm_request(
         llm_name, system_prompt, history, input_text, docs_k, index_name,
         task_config, dynamic_data["retriever_instance"],
         temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in,
-        language=language, retrieval_query=retrieval_query,
+        language=language, retrieval_query=retrieval_query, session_id=session_id,
     )
 
     for updated_history, documents in stream:
@@ -711,7 +735,7 @@ def _get_task_configs():
         content = _load_json(filepath, default={})
         if "name" in content:
             configs.append((content["name"], json.dumps(content)))
-    preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "Audio QA", "Transcription", "Diarization"]
+    preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "DM", "Audio QA", "Transcription", "Diarization"]
     order_index = {name: idx for idx, name in enumerate(preferred_order)}
     configs.sort(key=lambda item: order_index.get(item[0], len(preferred_order)))
     default_value = None
@@ -766,6 +790,9 @@ def _get_online_models(available_llms):
     def _is_sdialog_model(model_name: str) -> bool:
         return _interactor_name(model_name) == "sdialog"
 
+    def _is_dialogue_manager_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "dialogue_manager"
+
     def _is_model_online(model_name):
         import requests
 
@@ -781,10 +808,13 @@ def _get_online_models(available_llms):
         if entry.get("api_key"):
             headers["Authorization"] = f"Bearer {entry['api_key']}"
 
-        check_urls = [
-            f"{base_endpoint}/health",
-            f"{api_endpoint}/models",
-        ]
+        if _is_dialogue_manager_model(model_name):
+            check_urls = [f"{base_endpoint}/docs"]
+        else:
+            check_urls = [
+                f"{base_endpoint}/health",
+                f"{api_endpoint}/models",
+            ]
         for check_url in check_urls:
             try:
                 response = requests.get(
@@ -875,12 +905,20 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
     def _is_sdialog_model(model_name: str) -> bool:
         return _interactor_name(model_name) == "sdialog"
 
+    def _is_dialogue_manager_model(model_name: str) -> bool:
+        return _interactor_name(model_name) == "dialogue_manager"
+
     def _is_eligible(model_name):
         if not check_llm_interface(
             model_name,
             interface,
             available_llms=llm_handler.available_llms,
         ):
+            return False
+
+        if task_name == "DM":
+            return _is_dialogue_manager_model(model_name)
+        if _is_dialogue_manager_model(model_name):
             return False
 
         if task_name == "SDialog":
@@ -926,7 +964,10 @@ def update_rag_llm_choices(task_config_str: str):
         entry = llm_handler.available_llms.get(model_name, {})
         interactor = str(entry.get("interactor", "")).strip().lower()
 
-        if entry.get("interface") == "text" and interactor != "sdialog":
+        if (
+            entry.get("interface") == "text"
+            and interactor not in {"sdialog", "dialogue_manager"}
+        ):
             text_choices.append((model_name, model_name))
         elif interactor in {
             "sqa_salamandra_2b",
@@ -970,9 +1011,14 @@ def select_rag_text_model(model_name, task_config_str):
         ),
     )
 
-def select_rag_speech_model(model_name, task_config_str):
+def select_rag_speech_model(
+    model_name,
+    task_config_str,
+    audio_qa_mode: str | None = None,
+):
     task_config = json.loads(task_config_str) if task_config_str else {}
-    if task_config.get("name") != "RAG" or not model_name:
+    task_name = task_config.get("name")
+    if not model_name:
         return (
             gr.update(),
             gr.update(),
@@ -1009,7 +1055,7 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
         for name in dynamic_data.get("online_llms", [])
         if (
             llm_handler.available_llms.get(name, {}).get("interface") == "text"
-            and _interactor_name(name) != "sdialog"
+            and _interactor_name(name) not in {"sdialog", "dialogue_manager"}
         )
     ]
 
@@ -1019,6 +1065,9 @@ def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = No
 
 def update_llm_params_visibility(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}
+    if task_config.get("name") == "DM":
+        return gr.update(visible=False)
+
     interface = "audio" if task_config.get("interface") == "audio" else "text"
     audio_mode = task_config.get("audio_mode")
 

@@ -1,6 +1,8 @@
 import logging
 import time
 import re
+import requests
+from urllib.parse import quote
 
 import openai
 import tenacity
@@ -392,6 +394,75 @@ class SalamandraInteractor(BSCInteractor):
                     "content": reverse_doc_links(a),
                 })
         return messages
+
+
+class DialogueManagerInteractor:
+
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
+
+        # Configure the base service URL, not the individual chat endpoint.
+        self.api_endpoint = api_endpoint.rstrip("/")
+        self.model_name = model_name
+
+        self.chat_endpoint = f"{self.api_endpoint}/v1/chat/uns_dm"
+        self.reset_endpoint = f"{self.api_endpoint}/reset"
+        self.end_endpoint = f"{self.api_endpoint}/end"
+
+    def __call__(self, documents, history, llm, system_prompt, audio=None, language=None, session_id=None, user_input=None):
+        if not session_id:
+            raise ValueError("DialogueManagerInteractor requires a session_id.")
+        if not isinstance(user_input, str) or not user_input.strip():
+            raise ValueError("Dialogue-manager user input is empty.")
+
+        response = requests.post(
+            self.chat_endpoint,
+            json={
+                "user_input": user_input.strip(),
+                "session_id": session_id,
+            },
+            timeout=180,
+        )
+        response.raise_for_status()
+
+        payload = response.json()
+        answer = payload.get("response")
+
+        if not isinstance(answer, str):
+            raise RuntimeError(
+                f"Dialogue manager returned an invalid response: {payload}"
+            )
+
+        return answer
+
+    def reset(self, session_id):
+        """Reset one dialogue-manager session."""
+        safe_session_id = quote(session_id, safe="")
+        response = requests.post(
+            f"{self.reset_endpoint}/{safe_session_id}",
+            timeout=30,
+        )
+
+        # Resetting a session that has not been created yet is harmless.
+        if response.status_code == 404:
+            return False
+
+        response.raise_for_status()
+        return True
+
+    def end(self, session_id):
+        """End a session and return its generated summary."""
+        safe_session_id = quote(session_id, safe="")
+        response = requests.post(
+            f"{self.end_endpoint}/{safe_session_id}",
+            timeout=180,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def set_params(self, **params):
+        # The dialogue manager controls its own LLM parameters.
+        pass
+
 
 class SQASalamandra2BInteractor(BSCInteractor):
     def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):

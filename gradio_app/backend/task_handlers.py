@@ -60,6 +60,7 @@ class LocalTaskHandler:
             history,
             documents,
             task_name=self.task_config.get("name"),
+            user_input=query,
             **params,
         )
 
