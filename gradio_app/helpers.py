@@ -45,12 +45,17 @@ def bytes_to_wav(audio_bytes, original_format):
 
 
 def check_llm_interface(llm: str, interface: str, available_llms) -> bool:
-    """Checks if the given LLM supports the specified interface."""
-    interfaces = interface if isinstance(interface, list) else [interface]
-    for supported_llm in available_llms.values():
-        if supported_llm["display_name"].lower() in llm.lower():
-            return supported_llm["interface"] in interfaces
-    return False
+    """Check whether a configured model supports the requested interface."""
+    model = available_llms.get(llm)
+    if model is None:
+        return False
+
+    required_interfaces = (
+        interface if isinstance(interface, list) else [interface]
+    )
+    supported_interface = model.get("interface")
+
+    return supported_interface in required_interfaces
 
 
 def encode_audio_stream(audio):
