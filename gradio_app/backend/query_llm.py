@@ -17,6 +17,7 @@ from gradio_app.backend.BSCInteract import (
     WhisperXInteractor,
     SDialogInteractor,
     MeusliInteractor,
+    LlamaInteractor,
     DialogueManagerInteractor
 )
 
@@ -36,6 +37,7 @@ class LLMHandler:
         "whisperx": WhisperXInteractor,
         "sdialog": SDialogInteractor,
         "meusli": MeusliInteractor,
+        "llama": LlamaInteractor,
         "sqa_salamandra_2b": SQASalamandra2BInteractor,
         "sqa_salamandra_7b": SQASalamandra7BInteractor,
         "dialogue_manager": DialogueManagerInteractor
