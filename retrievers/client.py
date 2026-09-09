@@ -13,25 +13,29 @@ class RetrieverClient:
         params = {
             "index_name": index_name,
             "query": query,
-            "top_k": top_k
+            "top_k": top_k,
         }
 
         response = requests.get(f"{self.endpoint}/search", params=params)
         if response.status_code == 200:
             return response.json()["documents"]
-        else:
-            return []
+        raise RuntimeError(
+            f"Retriever search failed ({response.status_code}): {response.text}"
+        )
 
     def search_with_metadata(self, index_name, query, top_k=5):
         params = {
             "index_name": index_name,
             "query": query,
-            "top_k": top_k
+            "top_k": top_k,
         }
 
         response = requests.get(f"{self.endpoint}/search", params=params)
         if response.status_code != 200:
-            return [], []
+            raise RuntimeError(
+                f"Retriever search failed ({response.status_code}): "
+                f"{response.text}"
+            )
 
         payload = response.json()
         documents = payload.get("documents", [])
@@ -68,7 +72,10 @@ class RetrieverClient:
             raise RuntimeError(f"Retriever delete failed ({response.status_code}): {response.text}")
         return True
     
-    def create_vs(self, files_to_upload, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=False, metadata=None, turns=None):
+    def create_vs(
+        self, files_to_upload, chunk_size, percentile, embed_name, table_name,
+        splitting_strategy, append=False, metadata=None, turns=None,
+    ):
         open_file_handles = []
         files_payload = []
         try:
@@ -99,8 +106,9 @@ class RetrieverClient:
                 file_handle.close()
     
     def list_vs(self):
-        print(requests.get(f"{self.endpoint}/list_indices").json())
         try:
-            return requests.get(f"{self.endpoint}/list_indices").json()["index_names"]
-        except:
+            response = requests.get(f"{self.endpoint}/list_indices")
+            response.raise_for_status()
+            return response.json().get("index_names", [])
+        except (requests.RequestException, ValueError):
             return []

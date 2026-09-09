@@ -8,6 +8,8 @@ from gradio_app.backend.BSCInteract import (
     OlmoInteractor,
     EurollmInteractor,
     QwenInteractor,
+    SQASalamandra2BInteractor,
+    SQASalamandra7BInteractor,
     SalamandraInteractor,
     GemmaInteractor,
     ApertusInteractor,
@@ -15,7 +17,8 @@ from gradio_app.backend.BSCInteract import (
     WhisperXInteractor,
     SDialogInteractor,
     MeusliInteractor,
-    LlamaInteractor
+    LlamaInteractor,
+    DialogueManagerInteractor
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +37,10 @@ class LLMHandler:
         "whisperx": WhisperXInteractor,
         "sdialog": SDialogInteractor,
         "meusli": MeusliInteractor,
-        "llama": LlamaInteractor
+        "llama": LlamaInteractor,
+        "sqa_salamandra_2b": SQASalamandra2BInteractor,
+        "sqa_salamandra_7b": SQASalamandra7BInteractor,
+        "dialogue_manager": DialogueManagerInteractor
     }
 
     def __init__(self, available_llms) -> None:
@@ -44,6 +50,8 @@ class LLMHandler:
     
     def __call__(self, llm_name, system_prompt, history, documents, **params):
         task_name = params.pop("task_name", None)
+        session_id = params.pop("session_id", None)
+        user_input = params.pop("user_input", None)
         cache_key = f"{task_name}::{llm_name}" if task_name else llm_name
         llm = self._cache.get(cache_key, None)
         audio = None
@@ -55,11 +63,18 @@ class LLMHandler:
             language = params["language"]
             del params["language"]
         if llm is None:
+            # Inside get_llm_generator creates the model interactor based on the configuration
             llm = self.get_llm_generator(llm_name, task_name=task_name)
             self._cache[cache_key] = llm
         llm.set_params(**params)
+
+        call_kwargs = {"language": language}
+        if session_id is not None:
+            call_kwargs["session_id"] = session_id
+            call_kwargs["user_input"] = user_input
+
         try:
-            response = llm(documents, history, llm_name, system_prompt, audio, language=language)
+            response = llm(documents, history, llm_name, system_prompt, audio, **call_kwargs)
             return response
         except Exception as exc:
             logger.exception("LLM request failed for %s", llm_name)
@@ -107,6 +122,7 @@ class LLMHandler:
                 api_key=model_entry.get("api_key"),
             )
 
+        # creates the interactor based on the interactor name specified in the configuration
         interactor_cls = self.INTERACTOR_CLASSES.get(interactor)
         if interactor_cls is not None:
             return interactor_cls(**base_kwargs)

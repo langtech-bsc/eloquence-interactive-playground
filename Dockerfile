@@ -9,6 +9,7 @@ RUN apt install iputils-ping ffmpeg -y
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --no-deps -r requirements.txt
 RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --retries 10 --timeout 120 FlagEmbedding==1.3.5
 
 RUN pip install openai==1.102.0
 COPY . .

@@ -23,12 +23,21 @@ class SearchResult(BaseModel):
 @app.get("/list_indices")
 async def list_indices():
     retriever._load_index_config()
-    return {"index_names": list(retriever.index_config.keys())}
+    return {
+        "index_names": [
+            index_name
+            for index_name, embedder in retriever.index_config.items()
+            if isinstance(embedder, str)
+        ]
+    }
 
 
 @app.get("/search", response_model=SearchResult)
 async def search_item(index_name: str, query: str, top_k: int = 5):
-    results = retriever(index_name, query, int(top_k))
+    try:
+        results = retriever(index_name, query, int(top_k))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     documents = []
     documents_metadata = []
     for result in results:
@@ -62,7 +71,17 @@ async def create_vs(
             shutil.copyfileobj(file.file, buffer)
         uploaded_files.append(file_location)
     try:
-        retriever.create(uploaded_files, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=append, metadata=metadata, turns=turns)
+        retriever.create(
+            uploaded_files,
+            chunk_size,
+            percentile,
+            embed_name,
+            table_name,
+            splitting_strategy,
+            append=append,
+            metadata=metadata,
+            turns=turns,
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return "Success"

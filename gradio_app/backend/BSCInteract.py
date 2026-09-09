@@ -1,6 +1,8 @@
 import logging
 import time
 import re
+import requests
+from urllib.parse import quote
 
 import openai
 import tenacity
@@ -417,18 +419,184 @@ class SalamandraInteractor(BSCInteractor):
         return messages
 
 
-class WhisperInteractor(BSCInteractor):
-    def __init__(
-            self,
-            api_endpoint,
-            model_name,
-            api_key=None,
-            max_tokens=None,
-            temperature=None,
-            top_p=None,
-            stream=False,
-            transcription_kwargs=None,
+class DialogueManagerInteractor:
+
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
+
+        # Configure the base service URL, not the individual chat endpoint.
+        self.api_endpoint = api_endpoint.rstrip("/")
+        self.model_name = model_name
+
+        self.chat_endpoint = f"{self.api_endpoint}/v1/chat/uns_dm"
+        self.reset_endpoint = f"{self.api_endpoint}/reset"
+        self.end_endpoint = f"{self.api_endpoint}/end"
+
+    def __call__(self, documents, history, llm, system_prompt, audio=None, language=None, session_id=None, user_input=None):
+        if not session_id:
+            raise ValueError("DialogueManagerInteractor requires a session_id.")
+        if not isinstance(user_input, str) or not user_input.strip():
+            raise ValueError("Dialogue-manager user input is empty.")
+
+        response = requests.post(
+            self.chat_endpoint,
+            json={
+                "user_input": user_input.strip(),
+                "session_id": session_id,
+            },
+            timeout=180,
+        )
+        response.raise_for_status()
+
+        payload = response.json()
+        answer = payload.get("response")
+
+        if not isinstance(answer, str):
+            raise RuntimeError(
+                f"Dialogue manager returned an invalid response: {payload}"
+            )
+
+        return answer
+
+    def reset(self, session_id):
+        """Reset one dialogue-manager session."""
+        safe_session_id = quote(session_id, safe="")
+        response = requests.post(
+            f"{self.reset_endpoint}/{safe_session_id}",
+            timeout=30,
+        )
+
+        # Resetting a session that has not been created yet is harmless.
+        if response.status_code == 404:
+            return False
+
+        response.raise_for_status()
+        return True
+
+    def end(self, session_id):
+        """End a session and return its generated summary."""
+        safe_session_id = quote(session_id, safe="")
+        response = requests.post(
+            f"{self.end_endpoint}/{safe_session_id}",
+            timeout=180,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def set_params(self, **params):
+        # The dialogue manager controls its own LLM parameters.
+        pass
+
+
+class SQASalamandra2BInteractor(BSCInteractor):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
+        import requests
+        super().__init__(api_endpoint=api_endpoint, model_name=model_name, api_key=api_key, max_tokens=max_tokens, temperature=temperature, top_p=top_p, stream=stream)
+        self.sqa_client = requests.Session()
+        self.transcriptions_url = (
+            f"{api_endpoint.rstrip('/')}/audio/transcriptions"
+        )
+
+    def __call__(
+        self, documents, history, llm, system_prompt, audio, language=None,
     ):
+        from io import BytesIO
+        from gradio_app.helpers import detect_audio_format, bytes_to_wav
+
+        if audio is None:
+            raise ValueError(
+                "SQA Salamandra 2B requires an audio question."
+            )
+
+        audio_bytes = bytes(audio)
+        audio_format = detect_audio_format(audio_bytes)
+        if audio_format != "wav":
+            audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+
+        audio_file = BytesIO(audio_bytes)
+
+        form_data = [
+            ("model", self.model_name),
+            *[
+                ("documents", str(document))
+                for document in documents
+            ],
+        ]
+
+        temperature = self.generate_kwargs.get("temperature")
+        if temperature is not None:
+            form_data.append(
+                ("temperature", str(temperature))
+            )
+
+        response = self.sqa_client.post(
+            self.transcriptions_url,
+            files={
+                "file": ("input.wav", audio_file, "audio/wav"),
+            },
+            data=form_data,
+            timeout=600,
+        )
+
+        response.raise_for_status()
+
+        return response.json()["text"]
+
+class SQASalamandra7BInteractor(BSCInteractor):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
+        import requests
+        super().__init__(api_endpoint=api_endpoint, model_name=model_name, api_key=api_key, max_tokens=max_tokens, temperature=temperature, top_p=top_p, stream=stream)
+        self.sqa_client = requests.Session()
+        self.transcriptions_url = (
+            f"{api_endpoint.rstrip('/')}/audio/transcriptions"
+        )
+
+    def __call__(
+        self, documents, history, llm, system_prompt, audio, language=None,
+    ):
+        from io import BytesIO
+        from gradio_app.helpers import detect_audio_format, bytes_to_wav
+
+        if audio is None:
+            raise ValueError(
+                "SQA Salamandra 7B requires an audio question."
+            )
+
+        audio_bytes = bytes(audio)
+        audio_format = detect_audio_format(audio_bytes)
+        if audio_format != "wav":
+            audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+
+        audio_file = BytesIO(audio_bytes)
+
+        form_data = [
+            ("model", self.model_name),
+            *[
+                ("documents", str(document))
+                for document in documents
+            ],
+        ]
+
+        temperature = self.generate_kwargs.get("temperature")
+        if temperature is not None:
+            form_data.append(
+                ("temperature", str(temperature))
+            )
+
+        response = self.sqa_client.post(
+            self.transcriptions_url,
+            files={
+                "file": ("input.wav", audio_file, "audio/wav"),
+            },
+            data=form_data,
+            timeout=600,
+        )
+
+        response.raise_for_status()
+
+        return response.json()["text"]
+
+class WhisperInteractor(BSCInteractor):
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False, transcription_kwargs=None):
         super().__init__(api_endpoint, model_name, api_key, max_tokens, temperature, top_p, stream)
         self.transcription_kwargs = transcription_kwargs or {}
 
@@ -438,11 +606,15 @@ class WhisperInteractor(BSCInteractor):
 
         logger.info("WhisperInteractor language=%s", language)
         audio_bytes = bytes(audio)
+        if not audio_bytes:
+            raise ValueError("Whisper requires a non-empty audio input.")
         audio_format = detect_audio_format(audio_bytes)
         if audio_format != "wav":
             audio_bytes = bytes_to_wav(audio_bytes, audio_format)
+            audio_format = "wav"
         audio = BytesIO(audio_bytes)
-        audio.name = "input." + audio_format
+        audio.name = "input.wav"
+        audio.seek(0)
         transcription = self.client.audio.transcriptions.create(
             file=audio,
             model=self.model_name,
