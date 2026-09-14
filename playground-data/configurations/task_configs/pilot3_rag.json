@@ -1,0 +1,1 @@
+{"name": "Pilot3 RAG (Call Center)", "RAG": false, "interface": "text", "service": "pilot3-http://pilot3-server:8000", "retriever_type": "baseline"}

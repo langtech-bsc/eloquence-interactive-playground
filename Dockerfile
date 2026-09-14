@@ -6,6 +6,11 @@ RUN apt update
 RUN apt install curl -y
 RUN apt install iputils-ping ffmpeg -y
 
+# Be patient with slow/flaky PyPI connections (default pip timeout of 15s is too low and
+# fails the build with ReadTimeoutError on large wheels like torch).
+ENV PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --no-deps -r requirements.txt
 RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu

@@ -1,14 +1,63 @@
+# Two-machine local stack: this brings up BOTH the Pilot_3 pipeline server and the
+# BSC Interactive Playground UI on the local machine (Mac). The only remote piece is
+# the LLM (vLLM on the BSC GPU VM), reached over an SSH tunnel whose near end is on
+# this host at localhost:9001 (see INTEGRATION_LAUNCH.md).
+#
+# Layout: this compose file lives at the IP repo root. The Pilot_3 pipeline is vendored
+# under ./pilot3/ (its own Dockerfile + requirements + source), and the UI builds from
+# the repo root (./).
+#
+# Networking notes (why this is NOT `network_mode: host`):
+#   - On Docker Desktop / Colima for Mac, `network_mode: host` does not share the Mac's
+#     network namespace, so it can neither publish ports to the Mac nor reach the SSH tunnel.
+#   - Instead both services sit on a user-defined bridge network and:
+#       * the UI reaches the server by its service name (pilot3-server:8000),
+#       * the server reaches the SSH tunnel on the Mac host via host.docker.internal:9001
+#         (set LLM_API_BASE accordingly in pilot3/.env).
 services:
-
-  gradio:
-    build: 
-      context: .
-    pull_policy: build
-    restart: unless-stopped
+  server:
+    build: ./pilot3
+    image: pilot3-rag:latest
+    container_name: pilot3-server
     ports:
-      - "8086:8086"
+      - "8000:8000"                 # exposed on the Mac for debugging / curl
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # so LLM_API_BASE can hit the tunnel on the host
+    env_file:
+      - ./pilot3/.env               # LLM_API_BASE, LLM_API_KEY, PILOT3_*_MODEL
     environment:
-      - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
-      - ROOT_PATH=/dev
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - ./pilot3:/app
+      # HF model/ChromaDB cache. Default lives under $HOME because Colima mounts the home
+      # dir but NOT /tmp — a /tmp path would silently not persist and re-download ~4GB each
+      # cold start. Override with HF_CACHE_DIR in the shell/compose env (absolute path under
+      # a Colima-mounted dir).
+      - ${HF_CACHE_DIR:-${HOME}/.cache/pilot3-hf}:/root/.cache/huggingface
+    command: uvicorn server:app --host 0.0.0.0 --port 8000
+    networks:
+      - pilot3
+
+  ui:
+    build:
+      context: .
+    image: eloquence-ip-bsc:latest
+    container_name: eloquence-ip-bsc
+    depends_on:
+      - server
+    ports:
+      - "8086:8086"                 # the UI; open http://localhost:8086 in the browser
+    environment:
+      # List all models.json entries without health-probing them on load, so the
+      # Pilot_3 LLM entries (which point at the pipeline, not an OpenAI /v1 endpoint)
+      # still appear in the dropdown. Do NOT set ROOT_PATH — that is for reverse-proxy
+      # deployments only; direct access needs the default empty prefix.
+      - ELOQ_PROBE_MODELS_ON_LOAD=false
     volumes:
       - ./playground-data:/data:rw
+    networks:
+      - pilot3
+
+networks:
+  pilot3:
+    driver: bridge

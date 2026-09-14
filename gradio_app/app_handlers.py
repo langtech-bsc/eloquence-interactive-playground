@@ -2,7 +2,7 @@ import shutil
 import datetime
 import os
 import json
-from typing import Any, Dict, List, Optional
+from typing import List
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -36,18 +36,7 @@ env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 context_html_template = env.get_template('context_html_template.j2')
 
-def perform_ingest(
-    index_name: str,
-    chunk_size: int,
-    percentile: int,
-    embed_name: str,
-    file_paths: List[str],
-    splitting_strategy: str,
-    retriever_address: str,
-    append: bool = False,
-    snippet_metadata: Optional[Dict[str, Any]] = None,
-    snippet_turns: Optional[List[Dict[str, Any]]] = None,
-):
+def perform_ingest(index_name: str, chunk_size: int, percentile: int, embed_name: str, file_paths: List[str], splitting_strategy: str, retriever_address: str, append: bool = False):
     """Handles the document ingestion process."""
     if not file_paths:
         raise gr.Error("You must upload at least one file.")
@@ -73,9 +62,7 @@ def perform_ingest(
             embed_name,
             index_name,
             splitting_strategy,
-            append=append,
-            metadata=snippet_metadata,
-            turns=snippet_turns,
+            append=append
         )
     finally:
         generic_root = os.path.abspath(settings.GENERIC_UPLOAD)
@@ -94,38 +81,43 @@ def load_task(task_config):
     task_config = json.loads(task_config)
     rag_enabled = task_config.get("name") == "RAG"
     is_summarization = task_config.get("name") == "Summarization"
+    is_pilot3 = str(task_config.get("service", "")).startswith("pilot3")
+    # Pilot3 does its own retrieval, so show the retrieved-docs panel even though RAG=false.
+    show_docs = rag_enabled or is_pilot3
     audio_mode = task_config.get("audio_mode")
     if task_config["interface"] == "audio":
         return (
-            gr.update(visible=False),
-            gr.update(visible=True),
-            gr.update(interactive=True),
-            gr.update(visible=True),
-            gr.update(visible=False),
-            gr.update(visible=audio_mode == "qa", value="whisper_llm" if audio_mode == "qa" else None),
-            gr.update(visible=rag_enabled),
-            gr.update(visible=rag_enabled),
-            gr.update(visible=rag_enabled),
-            gr.update(visible=is_summarization),
-            gr.update(visible=is_summarization),
-            gr.update(visible=False),
-            gr.update(visible=rag_enabled),
+            gr.update(visible=False),                 # text_column
+            gr.update(visible=True),                  # audio_column
+            gr.update(interactive=True),              # submit_btn
+            gr.update(visible=True),                  # language_dropdown
+            gr.update(visible=False),                 # llm_params_accordion
+            gr.update(visible=audio_mode == "qa", value="whisper_llm" if audio_mode == "qa" else None),  # audio_qa_mode
+            gr.update(visible=rag_enabled),           # retrievers_radio
+            gr.update(visible=rag_enabled),           # index_name
+            gr.update(visible=show_docs),             # rag_column
+            gr.update(visible=is_summarization),      # summarize_btn
+            gr.update(visible=is_summarization),      # summary_box
+            gr.update(visible=False),                 # text_llm_name
+            gr.update(visible=rag_enabled),           # rag_params_accordion
+            gr.update(visible=is_pilot3),             # pilot3_retriever
         )
     else:
         return (
-            gr.update(visible=True),
-            gr.update(visible=False),
-            gr.update(interactive=True),
-            gr.update(visible=False),
-            gr.update(visible=True),
-            gr.update(visible=False, value=None),
-            gr.update(visible=rag_enabled),
-            gr.update(visible=rag_enabled),
-            gr.update(visible=rag_enabled),
-            gr.update(visible=is_summarization),
-            gr.update(visible=is_summarization),
-            gr.update(visible=False),
-            gr.update(visible=rag_enabled),
+            gr.update(visible=True),                  # text_column
+            gr.update(visible=False),                 # audio_column
+            gr.update(interactive=True),              # submit_btn
+            gr.update(visible=False),                 # language_dropdown
+            gr.update(visible=True),                  # llm_params_accordion
+            gr.update(visible=False, value=None),     # audio_qa_mode
+            gr.update(visible=rag_enabled),           # retrievers_radio
+            gr.update(visible=rag_enabled),           # index_name
+            gr.update(visible=show_docs),             # rag_column
+            gr.update(visible=is_summarization),      # summarize_btn
+            gr.update(visible=is_summarization),      # summary_box
+            gr.update(visible=False),                 # text_llm_name
+            gr.update(visible=rag_enabled),           # rag_params_accordion
+            gr.update(visible=is_pilot3),             # pilot3_retriever
         )
 
 
@@ -145,9 +137,13 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
     audio_data = kwargs.get("audio")
     language = kwargs.get("language")
     render_doc_links = kwargs.get("render_doc_links", True)
-    metadata_sink = kwargs.get("metadata_sink")
 
     logger.info('Starting LLM stream and document retrieval...')
+    # Only the Pilot3 remote handler understands retriever_type; never pass it into the
+    # local interactor path (it would reach set_params and could break other tasks).
+    extra = {}
+    if str(task_config.get("service", "")).startswith("pilot3"):
+        extra["retriever_type"] = kwargs.get("retriever_type")
     stream = task_handler(
         llm_name,
         system_prompt,
@@ -159,22 +155,11 @@ def _process_llm_request(llm_name, system_prompt, history, query, docs_k, index_
         top_p=kwargs.get("top_p", 0.95),
         max_tokens=kwargs.get("max_tokens", 300),
         audio=audio_data,
-        language=language
+        language=language,
+        **extra,
     )
 
-    for stream_item in stream:
-        if len(stream_item) == 3:
-            part, documents, documents_metadata = stream_item
-        else:
-            part, documents = stream_item
-            documents_metadata = []
-
-        if metadata_sink is not None:
-            metadata_sink["documents"] = documents_metadata
-        if isinstance(part, dict):
-            if metadata_sink is not None:
-                metadata_sink["transcription"] = part
-            part = part.get("text", "")
+    for part, documents in stream:
         history[-1][1] += part
         if render_doc_links:
             history[-1][1] = replace_doc_links(history[-1][1])
@@ -419,9 +404,13 @@ def refresh_system_prompts(request: gr.Request):
 
 def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config, audio_qa_mode=None, text_llm_name=None):
     """Validates playground inputs before sending a query to the LLM."""
-    if not llm: raise gr.Error("Please select an LLM.")
     if not task_config: raise gr.Error("Please select a Task Configuration.")
     task_config_dict = json.loads(task_config)
+    # Services that own their own LLM (the remote pipeline generates internally)
+    # don't require an LLM to be selected in IP.
+    _service = task_config_dict.get("service", "")
+    if not llm and not (_service.startswith("pilot3") or _service.startswith("remote")):
+        raise gr.Error("Please select an LLM.")
     if task_config_dict.get("interface") != "audio":
         if not text.strip():
             raise gr.Error("Query cannot be empty.")
@@ -494,11 +483,13 @@ def _collect_llm_response(response):
     except TypeError:
         return str(response)
 
-def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str, language=None, audio_qa_mode=None, text_llm_name=None):
+def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config_str, language=None, audio_qa_mode=None, text_llm_name=None, pilot3_retriever=None):
     """Handles user interaction in the Gradio chat interface."""
     task_config = json.loads(task_config_str)
     history = history or []
-    
+    is_pilot3 = str(task_config.get("service", "")).startswith("pilot3")
+    show_docs = bool(task_config.get("RAG")) or is_pilot3
+
     # Handle audio interface if needed
     audio_in = None
     if task_config.get("interface") == "audio":
@@ -533,18 +524,121 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
     stream = _process_llm_request(
         llm_name, system_prompt, history, input_text, docs_k, index_name,
         task_config, dynamic_data["retriever_instance"],
-        temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in, language=language
+        temperature=temp, top_p=top_p, max_tokens=max_tokens, audio=audio_in, language=language,
+        retriever_type=pilot3_retriever,
     )
-    
+
+    documents = []
     for updated_history, documents in stream:
         documents_html = [markdown.markdown(d) for d in documents]
         context_html = context_html_template.render(documents=documents_html)
         yield (
             updated_history,
             context_html,
-            gr.update(visible=bool(task_config.get("RAG"))),
+            gr.update(visible=show_docs),
             gr.Textbox(value="", interactive=False),
+            documents,
         )
+
+# --- Pilot3 integration helpers ---
+PILOT3_SALAMANDRA = "Salamandra-7B (Pilot3)"
+PILOT3_KRIKRI = "Llama-Krikri-8B (Pilot3)"
+PILOT3_LLMS = {PILOT3_SALAMANDRA, PILOT3_KRIKRI}
+
+
+def enforce_pilot3_llm(llm_name, task_config_str):
+    """The Pilot3 pipeline only serves its own models; revert anything else with a notice."""
+    if not task_config_str:
+        return gr.update()
+    task_config = json.loads(task_config_str)
+    if not str(task_config.get("service", "")).startswith("pilot3"):
+        return gr.update()
+    if llm_name in PILOT3_LLMS:
+        return gr.update()
+    gr.Warning("That model isn't served by the Pilot3 pipeline. Reverting to Salamandra.")
+    return gr.update(value=PILOT3_SALAMANDRA)
+
+
+def enforce_pilot3_retriever(choice):
+    """Fine-tuned LaBSE is WIP; revert to baseline with a notice."""
+    if choice == "finetuned":
+        gr.Warning("Fine-tuned LaBSE is still WIP and not selectable yet. Using Baseline LaBSE.")
+        return gr.update(value="baseline")
+    return gr.update()
+
+
+def _format_docs(documents, search_text=""):
+    """Render the retrieved-docs panel, optionally filtered by a case-insensitive substring."""
+    docs = documents or []
+    needle = (search_text or "").strip().lower()
+    if needle:
+        docs = [d for d in docs if needle in (d or "").lower()]
+    documents_html = [markdown.markdown(d) for d in docs]
+    return context_html_template.render(documents=documents_html)
+
+
+def filter_docs(search_text, raw_docs):
+    """Realtime keyword filter over the retrieved documents (docs_search.change handler)."""
+    return _format_docs(raw_docs, search_text)
+
+
+def _pilot3_model_label(llm_name):
+    """Human label + pipeline llm_type for a Pilot3 LLM selection."""
+    if llm_name and "krikri" in llm_name.lower():
+        return "Llama-Krikri-8B", "krikri"
+    return "Salamandra-7B", "salamandra"
+
+
+def lock_ui_for_generation(llm_name=None, task_config_str=None):
+    """Disable controls and show a status saying whether we're switching models or generating.
+
+    The model swap happens lazily inside the first /query, so a single status covers both:
+    we compare the selected model to the last one used to choose the wording.
+    """
+    is_pilot3 = False
+    if task_config_str:
+        try:
+            is_pilot3 = str(json.loads(task_config_str).get("service", "")).startswith("pilot3")
+        except (ValueError, TypeError):
+            is_pilot3 = False
+
+    if is_pilot3:
+        label, llm_type = _pilot3_model_label(llm_name)
+        # Best-effort tracking of the model the pipeline last ran (server default: salamandra).
+        if dynamic_data.setdefault("pilot3_current_llm", "salamandra") != llm_type:
+            message = f"Loading {label} and generating output&hellip;"
+            dynamic_data["pilot3_current_llm"] = llm_type
+        else:
+            message = f"Generating output with {label}&hellip;"
+    else:
+        message = "Generating output&hellip;"
+
+    # Self-styled so the text can't inherit an invisible color/size from the theme.
+    status = (
+        '<div style="display:flex;align-items:center;gap:8px;'
+        'color:#5B5EA6;font-weight:600;font-size:14px;padding:4px 2px;">'
+        '<span class="spinner"></span>'
+        f'<span>{message}</span></div>'
+    )
+    return (
+        gr.update(interactive=False),  # input_textbox
+        gr.update(interactive=False),  # submit_btn
+        gr.update(interactive=False),  # llm_name
+        gr.update(interactive=False),  # task_config
+        gr.update(value=status, visible=True),  # gen_status
+    )
+
+
+def unlock_ui_after_generation():
+    """Re-enable controls and clear the loading indicator (runs even if generation errors)."""
+    return (
+        gr.update(interactive=True),   # input_textbox
+        gr.update(interactive=True),   # submit_btn
+        gr.update(interactive=True),   # llm_name
+        gr.update(interactive=True),   # task_config
+        gr.update(value="", visible=False),  # gen_status
+    )
+
 
 # --- Feedback Tab ---
 def _load_feedback_df(force_reload: bool = False) -> pd.DataFrame:
@@ -775,7 +869,18 @@ def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -
                     if not _is_whisper_model(choice[1]) and not _is_whisperx_model(choice[1])
                 ]
 
+    is_pilot3 = str(task_config.get("service", "")).startswith("pilot3")
+    if is_pilot3:
+        # The Pilot3 pipeline serves only its own models; hide IP's local LLMs here.
+        choices = [c for c in choices if "(Pilot3" in c[1]]
+    else:
+        # Pilot3 models route to the remote pipeline; keep them out of local tasks
+        # (selecting one under a local task would hit IP's interactor path and 404).
+        choices = [c for c in choices if "(Pilot3" not in c[1]]
+
     default_value = choices[0][1] if choices else None
+    if is_pilot3 and any(c[1] == PILOT3_SALAMANDRA for c in choices):
+        default_value = PILOT3_SALAMANDRA
     return gr.update(choices=choices, value=default_value, visible=True)
 
 def update_text_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:

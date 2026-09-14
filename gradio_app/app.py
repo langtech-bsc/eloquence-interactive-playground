@@ -47,6 +47,11 @@ from gradio_app.app_handlers import (
     update_text_llm_choices,
     update_llm_params_visibility,
     update_rag_params_visibility,
+    enforce_pilot3_llm,
+    enforce_pilot3_retriever,
+    filter_docs,
+    lock_ui_for_generation,
+    unlock_ui_after_generation,
 )
 
 # --- Logging ---
@@ -152,67 +157,10 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.add_middleware(SubpathMiddleware, settings=settings)
 
-
-def _to_float(value, default=None):
-    try:
-        if value is None:
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _build_transcription_metadata(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> Optional[Dict[str, Any]]:
-    if not transcription_payload:
-        return None
-
-    segments = transcription_payload.get("segments") or []
-    if not segments:
-        return {
-            "chunk_start_seconds": chunk_start_seconds,
-            "start_time": chunk_start_seconds,
-            "end_time": chunk_start_seconds,
-        }
-
-    first_start = _to_float(segments[0].get("start"), 0.0)
-    last_end = _to_float(segments[-1].get("end"), first_start)
-
-    return {
-        "chunk_start_seconds": chunk_start_seconds,
-        "start_time": chunk_start_seconds + first_start,
-        "end_time": chunk_start_seconds + last_end,
-    }
-
-
-def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> List[Dict[str, Any]]:
-    if not transcription_payload:
-        return []
-
-    turns = []
-    for segment in transcription_payload.get("segments") or []:
-        if not isinstance(segment, dict):
-            continue
-
-        text = str(segment.get("text") or "").strip()
-        if not text:
-            continue
-
-        local_start = _to_float(segment.get("start"), 0.0)
-        local_end = _to_float(segment.get("end"), local_start)
-        turns.append({
-            "speaker": segment.get("speaker"),
-            "text": text,
-            "start_time": chunk_start_seconds + local_start,
-            "end_time": chunk_start_seconds + local_end,
-        })
-
-    return turns
-
-
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
     if kwargs["llm_name"] not in available_llms.keys():
-        return "", [], [], None, []  # Return empty text and documents for unknown LLM
+        return "", []  # Return empty text and documents for unknown LLM
     
     _, task_configs_list = _get_task_configs()
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
@@ -234,39 +182,24 @@ async def query_llm_general(available_llms, audio_file=None, **kwargs):
         else:
             query = "Describe the audio."
     
-    metadata_sink = {}
-    chunk_start_seconds = _to_float(kwargs.get("chunk_start_seconds"), 0.0)
-
     stream = _process_llm_request(
         kwargs["llm_name"], kwargs.get("system_prompt"), history, query,
         kwargs.get("docs_k"), kwargs.get("index_name"), task_config, retriever_instance,
         temperature=kwargs.get("temp"), top_p=kwargs.get("top_p"),
         max_tokens=kwargs.get("max_tokens"), audio=audio_data, language=kwargs.get("language"),
-        render_doc_links=kwargs.get("render_doc_links", True),
-        metadata_sink=metadata_sink
+        render_doc_links=kwargs.get("render_doc_links", True)
     )
     
     final_text = ""
     final_docs = []
-    final_docs_metadata = []
     for updated_history, docs in stream:
         final_text = updated_history[-1][1]
         if docs:
             final_docs = [d if isinstance(d, str) else str(d) for d in docs]
         else:
             final_docs = []
-        final_docs_metadata = metadata_sink.get("documents", [])
     
-    transcription_metadata = _build_transcription_metadata(
-        metadata_sink.get("transcription"),
-        chunk_start_seconds,
-    )
-    transcription_turns = _build_transcription_turns(
-        metadata_sink.get("transcription"),
-        chunk_start_seconds,
-    )
-
-    return final_text, final_docs, final_docs_metadata, transcription_metadata, transcription_turns
+    return final_text, final_docs
 
 
 @app.post("/stream")
@@ -294,21 +227,14 @@ async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadF
     """Primary endpoint for submitting a single query to the LLM."""
     request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
     try:
-        response_text, documents, documents_metadata, transcription_metadata, transcription_turns = await query_llm_general(
+        response_text, documents = await query_llm_general(
             available_llms=llm_handler.available_llms,
             audio_file=audio_file,
             **request_data.model_dump()
         )
         if len(documents) < 2:
             documents = []
-            documents_metadata = []
-        return ResponseQueryLLM(
-            text=response_text,
-            documents=documents,
-            documents_metadata=documents_metadata,
-            transcription_metadata=transcription_metadata,
-            transcription_turns=transcription_turns,
-        )
+        return ResponseQueryLLM(text=response_text, documents=documents)
     except Exception as exc:
         logger.exception("Query failed")
         return ResponseQueryLLM(text="", documents=[], error=str(exc))
@@ -324,7 +250,7 @@ async def batch_query_endpoint(body: str = Form(...), data_file: UploadFile = Fi
     for conv_id, turns in batch_data.items():
         history = []
         for turn in turns:
-            response_text, _, _, _, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
+            response_text, _ = await query_llm_general(available_llms=llm_handler.available_llms, input_text=turn, history=deepcopy(history), **request_data.model_dump())
             history.append([turn, response_text])
         processed_data[conv_id] = history
     
@@ -351,9 +277,7 @@ async def ingest_endpoint(content_file: UploadFile, body: str = Form(...)):
             file_paths=[temp_file_path],
             splitting_strategy=request.splitting_strategy,
             retriever_address=request.retriever_address,
-            append=request.append,
-            snippet_metadata=request.snippet_metadata,
-            snippet_turns=request.snippet_turns,
+            append=request.append
         )
         return ResponseIngest(status="success", msg="Document ingested successfully.")
     except Exception as e:
@@ -435,6 +359,8 @@ examples = [
 ]
 
 with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CODE) as demo:
+    # Holds the raw retrieved documents for realtime client-side filtering.
+    raw_docs_state = gr.State([])
     # --- PLAYGROUND TAB ---
     with gr.Tab("Playground"):
         with gr.Row():
@@ -500,6 +426,8 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                             submit_btn = gr.Button("Submit", elem_id="submit_btn")
                             clear_btn = gr.Button("Clear", elem_id="clear_btn")
 
+                gen_status = gr.HTML("", visible=False, elem_id="gen_status")
+
                 with gr.Row(elem_id="summary_controls_row"):
                     with gr.Column(scale=6, min_width=0):
                         summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
@@ -524,6 +452,13 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         text_llm_name = gr.Radio(label="Text LLM", visible=False, elem_id="text_llm_name")
                         retrievers_radio = gr.Radio(label="Vector Store", visible=False)
                         index_name = gr.Radio(label="Index name", visible=False)
+                        pilot3_retriever = gr.Radio(
+                            label="Retriever",
+                            choices=[("Baseline LaBSE", "baseline"), ("Fine-tuned LaBSE (WIP)", "finetuned")],
+                            value="baseline",
+                            visible=False,
+                            elem_id="pilot3_retriever",
+                        )
 
                     with gr.Accordion("Prompt Settings", open=False):
                         system_prompt = gr.Textbox(value="", label="System Prompt", lines=4)
@@ -563,6 +498,12 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                 # RAG context display
                 with gr.Column(visible=False) as rag_column:
                     gr.Markdown("### Retrieved Context")
+                    docs_search = gr.Textbox(
+                        placeholder="Filter retrieved documents by keyword...",
+                        show_label=False,
+                        container=False,
+                        elem_id="docs_search",
+                    )
                     context_html = gr.HTML()
 
     # --- INGESTION TAB ---
@@ -614,49 +555,33 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     )
 
     # --- Playground Events ---
-    submit_btn.click(
-        validate_interaction,
-        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
-        None
-    ).success(
-        interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
-    ).then(
-        lambda: gr.update(interactive=True), None, [input_textbox]
-    )
+    _VALIDATE_INPUTS = [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name]
+    _INTERACT_INPUTS = [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name, pilot3_retriever]
+    _INTERACT_OUTPUTS = [chatbot, context_html, rag_column, input_textbox, raw_docs_state]
+    _LOCK_OUTPUTS = [input_textbox, submit_btn, llm_name, task_config, gen_status]
 
-    input_textbox.submit(
-        validate_interaction,
-        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
-        None
-    ).success(
-        interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
-    ).then(
-        lambda: gr.update(interactive=True), None, [input_textbox]
-    )
-
-    hidden_submit_btn.click(
-        validate_interaction,
-        [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
-        None
-    ).success(
-        interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
-    ).then(
-        lambda: gr.update(interactive=True), None, [input_textbox]
-    )
+    for _trigger in (submit_btn.click, input_textbox.submit, hidden_submit_btn.click):
+        _trigger(
+            validate_interaction, _VALIDATE_INPUTS, None
+        ).success(
+            lock_ui_for_generation, [llm_name, task_config], _LOCK_OUTPUTS
+        ).then(
+            interact, _INTERACT_INPUTS, _INTERACT_OUTPUTS
+        ).then(
+            unlock_ui_after_generation, None, _LOCK_OUTPUTS
+        )
     
-    clear_btn.click(lambda: ([], "", gr.update(value=None), "", gr.update(visible=False)), [], [chatbot, system_prompt, prompt_radio, summary_box, rag_column])
+    clear_btn.click(lambda: ([], "", gr.update(value=None), "", gr.update(visible=False), [], ""), [], [chatbot, system_prompt, prompt_radio, summary_box, rag_column, raw_docs_state, docs_search])
     summarize_btn.click(
         summarize_conversation,
         [chatbot, llm_name, task_config, system_prompt, temp, top_p, max_tokens],
         [summary_box],
     )
     retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
+    # Pilot3: keep selection honest (only Salamandra / Baseline LaBSE are live) + realtime doc filter.
+    llm_name.change(enforce_pilot3_llm, [llm_name, task_config], [llm_name])
+    pilot3_retriever.change(enforce_pilot3_retriever, [pilot3_retriever], [pilot3_retriever])
+    docs_search.change(filter_docs, [docs_search, raw_docs_state], [context_html])
     task_config.change(
         load_task,
         [task_config],
@@ -674,6 +599,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
             summary_box,
             text_llm_name,
             rag_params_accordion,
+            pilot3_retriever,
         ]
     ).then(
         update_llm_choices,
@@ -785,6 +711,9 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         """,
     )
 
+# Enable the event queue so gr.Info / gr.Warning toasts (and streaming) are delivered.
+demo.queue()
+
 app = gr.mount_gradio_app(
     app,
     demo,
@@ -801,5 +730,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port,
         root_path=settings.ROOT_PATH,
-        reload=True,
+        reload=False,
     )

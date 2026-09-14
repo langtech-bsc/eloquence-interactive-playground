@@ -1,5 +1,5 @@
 deploy:
-	docker compose --env-file .env up -d --build
+	docker compose --env-file ./pilot3/.env up -d --build
 undeploy:
 	docker compose down
 stop:

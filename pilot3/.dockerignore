@@ -1,0 +1,17 @@
+.git
+.gitignore
+.uvenv
+.uvenv-broken-backup
+.uv-cache
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.local
+old_scripts
+*.ipynb
+LAUNCH.md
+.DS_Store
+.vscode
+.idea
+convert_checkpoint.py

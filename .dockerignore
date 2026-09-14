@@ -5,3 +5,19 @@ README.md
 Dockerfile
 Makefile
 docker-compose.yml
+
+# Local virtualenvs — 1.5GB of host-only wheels. Shipping them as build context
+# dominated build time even when every layer was cached.
+.uiuvenv
+.uvenv
+.venv
+venv
+
+__pycache__
+**/__pycache__
+*.pyc
+
+.DS_Store
+.vscode
+*.md
+pilot3

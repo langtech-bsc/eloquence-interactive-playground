@@ -3,6 +3,9 @@ __pycache__/*
 __pycache__/
 __pycache__
 .env
+.venv/
+.venv-ip/
+pilot3/.venv/
 ./configurations/indexes.json
 .Dockerfile.swp
 /playground-data-review/

@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 env = Environment(loader=FileSystemLoader('gradio_app/templates'))
 context_template = env.get_template('context_template.j2')
 
-# Base class for BSC-based interactors, providing common functionality for constructing messages, handling requests, and formatting responses. 
-# Specific model interactors (Olmo, Eurollm, Qwen, etc.) inherit from this class and implement their own message construction logic based on the expected input format of the respective models.
+
 class BSCInteractor:
     def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
         self.model_name = model_name
@@ -28,7 +27,6 @@ class BSCInteractor:
         }
         logger.info(f"Creating with endpoint  {self.api_endpoint} and model_name {self.model_name}")
         self.stream = stream
-        # Builds OpenAI client with the provided API endpoint and key
         self.client = openai.OpenAI(
             base_url=self.api_endpoint,
             api_key=api_key
@@ -384,6 +382,8 @@ class SalamandraInteractor(BSCInteractor):
                 })
         return messages
 
+    
+    
 class WhisperInteractor(BSCInteractor):
     def __init__(
         self,
@@ -453,17 +453,14 @@ class WhisperXInteractor:
             return f"Speaker {int(match.group(1))}"
         return f"Speaker {speaker_str}"
 
-    def _transcription_payload(self, transcription):
+    # Formats the transcription output into a readable string format
+    def _format_transcription(self, transcription):
         payload = transcription.model_dump() if hasattr(transcription, "model_dump") else transcription
         if not isinstance(payload, dict):
             text_out = str(payload).strip()
-            return {
-                "text": text_out or "No speech segments detected in the provided audio.",
-                "segments": [],
-            }
+            return text_out or "No speech segments detected in the provided audio."
 
         lines = []
-        segments = []
         for segment in payload.get("segments") or []:
             if not isinstance(segment, dict) and hasattr(segment, "model_dump"):
                 segment = segment.model_dump()
@@ -476,24 +473,12 @@ class WhisperXInteractor:
 
             speaker = self._speaker_label(segment.get("speaker"))
             lines.append(f"{speaker}: {text}" if speaker else text)
-            segments.append({
-                "speaker": speaker,
-                "start": segment.get("start"),
-                "end": segment.get("end"),
-                "text": text,
-            })
 
         if lines:
-            return {
-                "text": "\n".join(lines),
-                "segments": segments,
-            }
+            return "\n".join(lines)
 
         text_out = str(payload.get("text", "")).strip()
-        return {
-            "text": text_out or "No speech segments detected in the provided audio.",
-            "segments": segments,
-        }
+        return text_out or "No speech segments detected in the provided audio."
 
     def __call__(self, documents, history, llm, system_prompt, audio, language=None):
         from io import BytesIO
@@ -532,4 +517,5 @@ class WhisperXInteractor:
             timeout=timeout,
         )
 
-        return self._transcription_payload(response)
+        formatted = self._format_transcription(response)
+        return formatted

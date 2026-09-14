@@ -117,6 +117,25 @@ class Settings(BaseSettings):
         return tuple(headers)
 
     CSS: str = """
+    .spinner {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 3px solid #e0e0e0;
+        border-top: 3px solid #5B5EA6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        vertical-align: middle;
+        margin-right: 8px;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    #gen_status {
+        font-weight: bold;
+        padding: 6px 0;
+    }
     button.secondary {
         background: #018f69;
         border-radius: 6px;

@@ -1,7 +1,5 @@
 import os
 import json
-import hashlib
-import re
 import tqdm
 
 import lancedb
@@ -15,19 +13,6 @@ from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, CS
 
 from gradio_app.backend.embedders import EmbedderFactory
 from settings import settings
-
-
-def normalize_index_name(index_name: str) -> str:
-    """Return a LanceDB-safe table name for a user-facing index name."""
-    normalized = re.sub(r"[^A-Za-z0-9_]", "_", index_name.strip())
-    normalized = re.sub(r"_+", "_", normalized).strip("_")
-    if not normalized:
-        raise ValueError("Index name cannot be empty.")
-    if normalized == index_name:
-        return normalized
-    digest = hashlib.sha1(index_name.encode("utf-8")).hexdigest()[:8]
-    return f"{normalized}_{digest}"
-
 
 def get_doc_loader(file_path):
     extension = file_path.split(".")[-1]
@@ -54,7 +39,6 @@ class LanceDBRetriever:
         self._load_index_config()
 
     def __call__(self, index_name, query, top_k=5):
-        index_name = normalize_index_name(index_name)
         embedder = self._get_embedder(index_name)
         table = self.db.open_table(index_name)
         query_vec = embedder.embed_query(query)
@@ -62,17 +46,10 @@ class LanceDBRetriever:
         documents = documents.limit(top_k).to_list()
         if self.threshold:
             documents = [d for d in documents if d['_distance'] <= self.threshold]
-        documents = [
-            {
-                "text": doc[settings.TEXT_COLUMN_NAME],
-                "metadata": doc.get(settings.METADATA),
-            }
-            for doc in documents
-        ]
+        documents = [doc[settings.TEXT_COLUMN_NAME] for doc in documents]
         return documents
 
     def _get_embedder(self, index_name):
-        index_name = normalize_index_name(index_name)
         if index_name not in self.index_config:
             self._load_index_config()
         if index_name not in self.index_config:
@@ -97,61 +74,7 @@ class LanceDBRetriever:
 
         tbl.add(df)
 
-    @staticmethod
-    def _turn_line(turn):
-        speaker = str(turn.get("speaker") or "").strip()
-        text = str(turn.get("text") or "").strip()
-        if not text:
-            return ""
-        return f"{speaker}: {text}" if speaker else text
-
-    def _chunks_from_turns(self, turns, chunk_size, source_metadata=None):
-        max_chars = int(chunk_size or 500)
-        snippets = []
-        current_turns = []
-        current_lines = []
-        current_len = 0
-
-        def flush_current():
-            if not current_turns:
-                return
-            first_turn = current_turns[0]
-            last_turn = current_turns[-1]
-            snippet_metadata = {
-                "start_time": first_turn.get("start_time"),
-                "end_time": last_turn.get("end_time"),
-                "turn_count": len(current_turns),
-            }
-            if source_metadata is not None:
-                snippet_metadata["source_metadata"] = source_metadata
-            snippets.append((
-                "\n".join(current_lines).strip(),
-                json.dumps(snippet_metadata, ensure_ascii=False),
-            ))
-
-        for turn in turns:
-            if not isinstance(turn, dict):
-                continue
-            line = self._turn_line(turn)
-            if not line:
-                continue
-
-            next_len = current_len + len(line) + (1 if current_lines else 0)
-            if current_turns and next_len > max_chars:
-                flush_current()
-                current_turns = []
-                current_lines = []
-                current_len = 0
-
-            current_turns.append(turn)
-            current_lines.append(line)
-            current_len += len(line) + (1 if current_len else 0)
-
-        flush_current()
-        return snippets
-
-    def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=False, metadata=None, turns=None):
-        table_name = normalize_index_name(table_name)
+    def create(self, file_paths, chunk_size, percentile, embed_name, table_name, splitting_strategy, append=False):
         db = lancedb.connect(settings.LANCEDB_DIRECTORY)
         batch_size = 128
 
@@ -184,26 +107,6 @@ class LanceDBRetriever:
         else:
             splitter = SemanticChunker(embedder, breakpoint_threshold_type="percentile", breakpoint_threshold_amount=float(percentile))
 
-        if turns is not None:
-            try:
-                parsed_turns = json.loads(turns) if isinstance(turns, str) else turns
-                source_metadata = json.loads(metadata) if isinstance(metadata, str) and metadata else metadata
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid turn metadata JSON: {exc}") from exc
-
-            chunks = self._chunks_from_turns(parsed_turns or [], chunk_size, source_metadata=source_metadata)
-            for i in tqdm.tqdm(range(0, int(np.ceil(len(chunks) / batch_size))), desc="Ingesting"):
-                texts, metadata_values = [], []
-                for text, md in chunks[i * batch_size:(i + 1) * batch_size]:
-                    if len(text) > 0:
-                        texts.append(text)
-                        metadata_values.append(md)
-                self._add_batch_to_table(texts, metadata_values, embedder, tbl)
-
-            self.index_config[table_name] = embed_name
-            self._save_index_config()
-            return
-
         for file_path in file_paths:
             loader = get_doc_loader(file_path)
             pages = []
@@ -211,21 +114,18 @@ class LanceDBRetriever:
                 pages.append(page)
 
             chunked_documents = splitter.split_documents(pages)
-            if metadata is not None:
-                chunks = [(doc.page_content, metadata) for doc in chunked_documents]
-            else:
-                try:
-                    chunks = [(doc.page_content, f"{doc.metadata['source']}-{doc.metadata['page']}") for doc in chunked_documents]
-                except:
-                    chunks = [(doc.page_content, f"{doc.metadata}") for doc in chunked_documents]
+            try:
+                chunks = [(doc.page_content, f"{doc.metadata['source']}-{doc.metadata['page']}") for doc in chunked_documents]
+            except:
+                chunks = [(doc.page_content, f"{doc.metadata}") for doc in chunked_documents]
 
             for i in tqdm.tqdm(range(0, int(np.ceil(len(chunks) / batch_size))), desc="Ingesting"):
-                texts, metadata_values = [], []
+                texts, metadata = [], []
                 for text, md in chunks[i * batch_size:(i + 1) * batch_size]:
                     if len(text) > 0:
                         texts.append(text)
-                        metadata_values.append(md)
-                self._add_batch_to_table(texts, metadata_values, embedder, tbl)
+                        metadata.append(md)
+                self._add_batch_to_table(texts, metadata, embedder, tbl)
 
 
         self.index_config[table_name] = embed_name
@@ -234,34 +134,26 @@ class LanceDBRetriever:
 
     
     def add_single_chunk(self, text: str, metadata: str, index_name: str):
-        index_name = normalize_index_name(index_name)
         embedder = self._get_embedder(index_name)
         table = self.db.open_table(index_name)
         self._add_batch_to_table([text], [metadata], embedder, table)
 
     def delete_index(self, index_name: str):
-        index_name = normalize_index_name(index_name)
         self._load_index_config()
 
         table_exists = True
         try:
-            # Try to open the table 
             self.db.open_table(index_name)
         except Exception:
             table_exists = False
 
-        # Check if the index exists either as a table in the database or in the config. 
-        # If it doesn't exist in either place, raise an error. 
-        # This prevents accidentally deleting an index that doesn't exist and also provides a clearer error message to the user.
         index_in_config = index_name in self.index_config
         if not table_exists and not index_in_config:
             raise ValueError(f"Index '{index_name}' does not exist.")
 
-        # If the table exists, drop it. 
         if table_exists:
             self.db.drop_table(index_name)
 
-        # If the index is in config, remove it from there and save the config. 
         if index_in_config:
             del self.index_config[index_name]
             self._save_index_config()

@@ -3,7 +3,6 @@
         "model_name": "salamandra-7b-instruct",
         "interactor": "salamandra",
         "display_name": "Salamandra (HF)",
-        "api_key": "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",
         "api_endpoint": "https://gg1brnpmx53zkhrg.eu-west-1.aws.endpoints.huggingface.cloud/v1",
         "interface": "text"
     },
@@ -77,6 +76,22 @@
         "display_name": "Mistral Small 3.1 24B (BSC)",
         "api_key": "",
         "api_endpoint": "http://84.88.53.199:9102/v1",
+        "interface": "text"
+    },
+    {
+        "model_name": "salamandra",
+        "interactor": "salamandra",
+        "display_name": "Salamandra-7B (Pilot3)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:8000",
+        "interface": "text"
+    },
+    {
+        "model_name": "krikri",
+        "interactor": "salamandra",
+        "display_name": "Llama-Krikri-8B (Pilot3)",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:8000",
         "interface": "text"
     }
 ]
