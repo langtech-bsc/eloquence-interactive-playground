@@ -14,9 +14,19 @@ Browser ──▶ localhost:8086  (IP UI container)
             SSH tunnel on your host  localhost:9001 ──▶ BSC VM vLLM
 ```
 
-Everything except the LLM is CPU-only, so the whole stack runs locally. See
-[INTEGRATION_LAUNCH.md](INTEGRATION_LAUNCH.md) for the architecture rationale and the
-integration's code-level changes.
+Everything except the LLM is CPU-only, so the whole stack runs locally.
+
+Both services sit on a user-defined bridge network rather than `network_mode: host`: on
+Docker Desktop and Colima for Mac, host networking does not share the Mac's network
+namespace, so a host-networked container can neither publish ports nor reach the SSH tunnel.
+On the bridge, the UI reaches the server by service name (`pilot3-server:8000`) and the
+server reaches the tunnel via `host.docker.internal:9001`.
+
+The integration itself is: `pilot3/` (the vendored pipeline — `server.py`, `pipeline.py`,
+`retriever.py`, `generator.py`, its own Dockerfile), a `Pilot3TaskHandler` in
+`gradio_app/backend/task_handlers.py`, a relaxed LLM-selection gate in
+`gradio_app/app_handlers.py`, and the task config at
+`playground-data/configurations/task_configs/pilot3_rag.json`.
 
 ## Prerequisites
 
@@ -133,18 +143,39 @@ generation fails; retrieval still works.
 4. Type a question and submit. The answer appears in the chat, retrieved documents in the
    right-hand panel.
 
-No LLM selection is required — the Pilot3 path defaults to Salamandra-7B. Only the two
-**Pilot3** entries in the dropdown map to anything real:
+### Retriever and LLM options
 
-- `Salamandra-7B (Pilot3)` → pipeline `llm_type=salamandra` (default).
-- `Llama-Krikri-8B (Pilot3, WIP)` → pipeline `llm_type=krikri`, still work in progress.
+Under **Task & Model Selection** the Pilot3 task exposes two independent choices. Both
+combinations are live and can be switched between turns — nothing is reloaded, so the change
+takes effect on the next message.
 
-Any other entry falls back to Salamandra on this task.
+**Retriever** (the `Retriever` radio):
+
+- `Baseline LaBSE` → `retriever_type=baseline`, stock `sentence-transformers/LaBSE`. Default.
+- `Fine-tuned LaBSE (TID)` → `retriever_type=finetuned`, the `Cutting3dg3/LaBSE-TID` model
+  fine-tuned on the pilot's data.
+
+Both query the same Chroma collection and both are instantiated at server start, so
+switching costs nothing at query time. The server log line tells you which one ran:
+`[RETRIEVER:baseline]` or `[RETRIEVER:finetuned]`.
+
+**Response generator** (the `Available LLMs` radio). Only the two **Pilot3** entries are
+served by the pipeline; the list is filtered to them on this task:
+
+- `Salamandra-7B (Pilot3)` → `llm_type=salamandra`. Default.
+- `Llama-Krikri-8B (Pilot3)` → `llm_type=krikri`.
+
+Switching only changes the model name the pipeline requests from the remote endpoint, so
+the model you pick must actually be served there. If BSC is running only Salamandra,
+selecting Krikri returns a `404` — see Troubleshooting.
+
+The generation parameters under **LLM Parameters** (temperature, top-p, max tokens) are
+forwarded to the pipeline on both paths.
 
 ## Logs
 
-`[RETRIEVER:baseline]` and `[GENERATOR]` lines go to the server container's stdout and flush
-live:
+`[RETRIEVER:baseline]` / `[RETRIEVER:finetuned]` and `[GENERATOR]` lines go to the server
+container's stdout and flush live:
 
 ```bash
 docker compose logs -f server     # or: docker logs -f pilot3-server
@@ -170,17 +201,13 @@ Then Ctrl+C the SSH tunnel terminal.
 | Chat: `could not reach the Pilot_3 pipeline at http://pilot3-server:8000 ... Connection refused` | The `server` container is not up yet. `docker compose logs -f server`, wait for the Uvicorn banner, submit again. |
 | Generation: `APIConnectionError` / `Connection refused` (Errno 111) | No tunnel. Confirm with `lsof -nP -iTCP:9001 -sTCP:LISTEN`, then redo step 2. |
 | Generation: `RemoteProtocolError: Server disconnected` | Tunnel is up but the BSC side is not serving. See step 2. |
-| Generation: `404` / model not found | `PILOT3_SALAMANDRA_MODEL` does not match the id from `curl localhost:9001/v1/models`. Fix `pilot3/.env`, then `docker compose restart server`. |
+| Generation: `404` / model not found | The requested model is not served by the endpoint. Compare `PILOT3_SALAMANDRA_MODEL` / `PILOT3_KRIKRI_MODEL` against `curl localhost:9001/v1/models`; fix `pilot3/.env` and `docker compose restart server`. If BSC is running only Salamandra, selecting Krikri in the UI produces this — switch back. |
 | `error while attempting to bind ... 8086/8000: address already in use` | `docker compose down`, or free it: `lsof -ti tcp:8086 \| xargs kill`. |
 | Several GB re-download on every cold start | `HF_CACHE_DIR` points somewhere the VM does not mount. Under Colima keep it under `$HOME` (default `~/.cache/pilot3-hf`); `/tmp` is not mounted. |
 | Base image will not pull on Apple Silicon | Add `platform: linux/amd64` to the affected service in `docker-compose.yml`. |
 | `host.docker.internal` does not resolve | Old Docker Desktop; the compose file already sets `extra_hosts: host.docker.internal:host-gateway`. Update Docker Desktop. |
 | `colima start` fails: `qemu-img not found` | The profile uses the QEMU backend. Recreate it with `vz` — see Prerequisites. |
 | "Pilot3 RAG (Call Center)" missing from the task list | `playground-data` not mounted, or a stale image. Check the `ui` volume mount and rebuild with `docker compose up --build`. |
-
-## Running without Docker
-
-See [RUN_WITHOUT_DOCKER.md](RUN_WITHOUT_DOCKER.md).
 
 ---
 

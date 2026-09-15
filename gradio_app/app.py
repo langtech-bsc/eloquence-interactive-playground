@@ -48,7 +48,6 @@ from gradio_app.app_handlers import (
     update_llm_params_visibility,
     update_rag_params_visibility,
     enforce_pilot3_llm,
-    enforce_pilot3_retriever,
     filter_docs,
     lock_ui_for_generation,
     unlock_ui_after_generation,
@@ -454,7 +453,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         index_name = gr.Radio(label="Index name", visible=False)
                         pilot3_retriever = gr.Radio(
                             label="Retriever",
-                            choices=[("Baseline LaBSE", "baseline"), ("Fine-tuned LaBSE (WIP)", "finetuned")],
+                            choices=[("Baseline LaBSE", "baseline"), ("Fine-tuned LaBSE (TID)", "finetuned")],
                             value="baseline",
                             visible=False,
                             elem_id="pilot3_retriever",
@@ -578,9 +577,9 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         [summary_box],
     )
     retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
-    # Pilot3: keep selection honest (only Salamandra / Baseline LaBSE are live) + realtime doc filter.
+    # Pilot3: both retrievers and both pipeline LLMs are selectable; only non-Pilot3 models
+    # need reverting, since the pipeline does not serve them. Plus the realtime doc filter.
     llm_name.change(enforce_pilot3_llm, [llm_name, task_config], [llm_name])
-    pilot3_retriever.change(enforce_pilot3_retriever, [pilot3_retriever], [pilot3_retriever])
     docs_search.change(filter_docs, [docs_search, raw_docs_state], [context_html])
     task_config.change(
         load_task,

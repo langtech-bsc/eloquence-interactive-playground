@@ -559,14 +559,6 @@ def enforce_pilot3_llm(llm_name, task_config_str):
     return gr.update(value=PILOT3_SALAMANDRA)
 
 
-def enforce_pilot3_retriever(choice):
-    """Fine-tuned LaBSE is WIP; revert to baseline with a notice."""
-    if choice == "finetuned":
-        gr.Warning("Fine-tuned LaBSE is still WIP and not selectable yet. Using Baseline LaBSE.")
-        return gr.update(value="baseline")
-    return gr.update()
-
-
 def _format_docs(documents, search_text=""):
     """Render the retrieved-docs panel, optionally filtered by a case-insensitive substring."""
     docs = documents or []
