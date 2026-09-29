@@ -16,6 +16,12 @@ LLM_API_BASE = os.environ.get("LLM_API_BASE", "http://localhost:9001/v1")
 # vLLM on a private VM is usually keyless; the OpenAI client still needs a non-empty value.
 LLM_API_KEY = os.environ.get("LLM_API_KEY") or "EMPTY"
 
+# Each model may be served by its own vLLM instance (on BSC: separate ports -> separate tunnels).
+MODEL_API_BASES = {
+    AVAILABLE_MODELS["salamandra"]: os.environ.get("PILOT3_SALAMANDRA_API_BASE") or LLM_API_BASE,
+    AVAILABLE_MODELS["krikri"]: os.environ.get("PILOT3_KRIKRI_API_BASE") or LLM_API_BASE,
+}
+
 # The served model's context window. salamandra-7b-instruct exposes only 2048 tokens, so a
 # multi-turn chat with 20 retrieved documents + a 512-token answer request overflows it and
 # the server returns HTTP 400. Configurable so a larger model lifts the cap without a code
@@ -65,8 +71,17 @@ class Generator:
     def __init__(self, model_name: str = DEFAULT_MODEL, max_new_tokens: int = 512, **_ignored):
         self.model_name = model_name
         self.max_new_tokens = max_new_tokens
-        self.client = OpenAI(base_url=LLM_API_BASE, api_key=LLM_API_KEY)
-        print(f"[GENERATOR] Using remote model '{self.model_name}' at {LLM_API_BASE}")
+        self._clients = {}
+        print(f"[GENERATOR] Using remote model '{self.model_name}' at {self._api_base()}")
+
+    def _api_base(self) -> str:
+        return MODEL_API_BASES.get(self.model_name, LLM_API_BASE)
+
+    def _client(self) -> OpenAI:
+        base = self._api_base()
+        if base not in self._clients:
+            self._clients[base] = OpenAI(base_url=base, api_key=LLM_API_KEY)
+        return self._clients[base]
 
     def unload(self):
         # Nothing is loaded locally anymore; kept for API compatibility.
@@ -133,10 +148,10 @@ class Generator:
         if n_docs < total_docs:
             print(f"[GENERATOR] Trimmed injected context to {n_docs}/{total_docs} docs to fit "
                   f"the {MODEL_MAX_CONTEXT}-token window")
-        print(f"\n[GENERATOR] Sending {len(messages) - 1} turns to '{self.model_name}' "
-              f"(temp={temperature}, top_p={top_p}, max_tokens={max_tokens})")
+        print(f"\n[GENERATOR] Sending {len(messages) - 1} turns to '{self.model_name}' at "
+              f"{self._api_base()} (temp={temperature}, top_p={top_p}, max_tokens={max_tokens})")
 
-        response = self.client.chat.completions.create(
+        response = self._client().chat.completions.create(
             model=self.model_name,
             messages=messages,
             temperature=temperature if temperature is not None else 0,

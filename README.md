@@ -9,9 +9,11 @@ Browser ──▶ localhost:8086  (IP UI container)
                  │  pilot3-http://pilot3-server:8000   (Docker bridge network)
                  ▼
             pilot3-server  (Pilot_3 FastAPI + LaBSE, CPU)
-                 │  LLM_API_BASE = http://host.docker.internal:9001/v1
+                 │  PILOT3_SALAMANDRA_API_BASE = http://host.docker.internal:9001/v1
+                 │  PILOT3_KRIKRI_API_BASE     = http://host.docker.internal:9002/v1
                  ▼
-            SSH tunnel on your host  localhost:9001 ──▶ BSC VM vLLM
+            SSH tunnel on your host  localhost:9001 ──▶ BSC VM vLLM (Salamandra)
+                                     localhost:9002 ──▶ BSC VM vLLM (Krikri)
 ```
 
 Everything except the LLM is CPU-only, so the whole stack runs locally.
@@ -36,8 +38,9 @@ The integration itself is: `pilot3/` (the vendored pipeline — `server.py`, `pi
   only way to reach it is a tunnel that terminates in your own account. Request one from
   BSC, put the private key at `~/.ssh/bsc_vllm`, and `chmod 600 ~/.ssh/bsc_vllm` — SSH
   refuses keys that are readable by others.
-- **The current vLLM port.** BSC stops the model between sessions and the port changes on
-  restart. Ask them for the live port rather than reusing one from these docs.
+- **The current vLLM ports.** Each model is served by its own vLLM instance on its own port
+  (at the time of writing Salamandra on `58093`, Krikri on `58105`). BSC stops the models
+  between sessions and the ports can change on restart, so ask them for the live ones.
 - **~11 GB free disk and roughly 35 minutes for the first run.** Measured end-to-end on a
   Mac with an empty cache: 27 minutes to build both images (about 4 GB of wheels, including
   two separate torch installs), then 9 minutes on first startup while the pipeline downloads
@@ -59,22 +62,29 @@ Keep this terminal open for as long as you use the app — generation needs it:
 
 ```bash
 ssh -i ~/.ssh/bsc_vllm -o IdentitiesOnly=yes -N \
-  -L 9001:127.0.0.1:<VLLM_PORT> <your-bsc-user>@212.128.227.234
+  -L 9001:127.0.0.1:<SALAMANDRA_PORT> \
+  -L 9002:127.0.0.1:<KRIKRI_PORT> \
+  <your-bsc-user>@212.128.227.234
 ```
 
-`9001` is the local port (it must match `LLM_API_BASE`); `<VLLM_PORT>` is where vLLM listens
-inside the VM.
+`9001` and `9002` are the local ports; they must match `PILOT3_SALAMANDRA_API_BASE` and
+`PILOT3_KRIKRI_API_BASE` in `pilot3/.env`. `<SALAMANDRA_PORT>` / `<KRIKRI_PORT>` are where
+each vLLM listens inside the VM. If you only need one model, forward only its port. Either
+variable can be left unset, and that model then uses `LLM_API_BASE`.
 
 `-o IdentitiesOnly=yes` is not optional. Without it SSH offers every key in your agent first
 and BSC cuts the connection with `Too many authentication failures` before reaching
 `bsc_vllm`.
 
-Confirm the endpoint before touching the UI — it must return JSON listing
-`salamandra-7b-instruct`:
+Confirm the endpoints before touching the UI. Each must return JSON listing the model id
+set in `pilot3/.env` (`PILOT3_SALAMANDRA_MODEL` / `PILOT3_KRIKRI_MODEL`):
 
 ```bash
-curl -s localhost:9001/v1/models
+curl -s localhost:9001/v1/models   # salamandra-7b-instruct
+curl -s localhost:9002/v1/models   # Llama-Krikri-8B-Instruct
 ```
+
+An empty reply means the tunnel is up but that model isn't running on BSC.
 
 ## 3. Build and start the stack
 
@@ -120,9 +130,15 @@ served by the pipeline; the list is filtered to them on this task:
 - `Salamandra-7B (Pilot3)` → `llm_type=salamandra`. Default.
 - `Llama-Krikri-8B (Pilot3)` → `llm_type=krikri`.
 
-Switching only changes the model name the pipeline requests from the remote endpoint, so
-the model you pick must actually be served there. If BSC is running only Salamandra,
-selecting Krikri returns a `404` — see Troubleshooting.
+Switching changes both the model name and the endpoint the pipeline calls: Salamandra goes
+to `PILOT3_SALAMANDRA_API_BASE`, Krikri to `PILOT3_KRIKRI_API_BASE`. The server log shows
+which endpoint was used, e.g. `[GENERATOR] Sending 1 turns to 'Llama-Krikri-8B-Instruct' at
+http://host.docker.internal:9002/v1`. If Krikri fails with `Connection error`, its tunnel
+(`9002`) is missing or Krikri isn't running on BSC. A `404` means `PILOT3_KRIKRI_MODEL`
+doesn't match the id from `curl localhost:9002/v1/models`.
+
+After editing `pilot3/.env`, run `docker compose up -d server`. A plain `restart` does not
+reload `env_file`.
 
 The generation parameters under **LLM Parameters** (temperature, top-p, max tokens) are
 forwarded to the pipeline on both paths.
