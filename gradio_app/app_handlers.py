@@ -15,7 +15,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.task_handlers import get_task_handler
 from gradio_app.backend.query_llm import LLMHandler
-from gradio_app.helpers import replace_doc_links, _load_json, _save_json, remove_html_tags, extract_docs_from_rendered_template, _get_user_filepath, check_llm_interface
+from gradio_app.helpers import replace_doc_links, _load_json, _save_json, remove_html_tags, extract_docs_from_rendered_template, strip_similarity_badge, _get_user_filepath, check_llm_interface
 from retrievers.client import RetrieverClient
 from settings import settings, USER_FEEDBACK_FILE, USER_HISTORY_FILE, USER_PROMPTS_FILE, USER_RETRIEVERS_FILE
 
@@ -564,7 +564,7 @@ def _format_docs(documents, search_text=""):
     docs = documents or []
     needle = (search_text or "").strip().lower()
     if needle:
-        docs = [d for d in docs if needle in (d or "").lower()]
+        docs = [d for d in docs if needle in strip_similarity_badge(d).lower()]
     documents_html = [markdown.markdown(d) for d in docs]
     return context_html_template.render(documents=documents_html)
 

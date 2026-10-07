@@ -113,9 +113,23 @@ def _save_json(filepath: str, data: Any):
     with open(filepath, "wt", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
+_DOC_SCORE_RE = re.compile(r'<span class="doc-score">.*?</span>\s*', flags=re.DOTALL)
+
+
+def with_similarity_badge(doc: str, similarity: float) -> str:
+    """Prefix a retrieved document with a display-only similarity badge."""
+    return f'<span class="doc-score">similarity {similarity:.3f}</span>\n\n{doc}'
+
+
+def strip_similarity_badge(doc: str) -> str:
+    return _DOC_SCORE_RE.sub('', doc or '')
+
+
 def extract_docs_from_rendered_template(rendered_html: str) -> List[str]:
     """Extracts document text from the rendered HTML context."""
     soup = BeautifulSoup(rendered_html, 'html.parser')
+    for badge in soup.select('.doc-score'):
+        badge.decompose()
     return [div.get_text(strip=True) for div in soup.select('.doc-box')]
 
 def remove_html_tags(text: str) -> str:

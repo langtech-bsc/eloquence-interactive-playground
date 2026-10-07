@@ -1,7 +1,7 @@
 import re
 
 import requests
-from gradio_app.helpers import check_llm_interface
+from gradio_app.helpers import check_llm_interface, with_similarity_badge
 
 def get_task_handler(config, llm, retriver):
     if config["service"].startswith("pilot3"):
@@ -107,8 +107,8 @@ class Pilot3TaskHandler:
     selections are ignored. `llm_name` is only used to pick the Pilot_3 `llm_type`.
 
     Service string format: "pilot3-<base_url>", e.g. "pilot3-http://127.0.0.1:8000".
-    Optional task-config key `retriever_type` ("baseline" | "finetuned", default
-    "baseline").
+    Optional task-config key `retriever_type` ("baseline" | "finetuned" |
+    "minilm_l6_tid", default "baseline").
     """
 
     def __init__(self, task_config):
@@ -157,6 +157,9 @@ class Pilot3TaskHandler:
             yield f"Error from Pilot_3 pipeline (HTTP {response.status_code}).", []
             return
         data = response.json()
-        documents = data.get("retrieved_documents", {}).get("documents", [[]])
-        documents = documents[0] if documents else []
+        retrieved = data.get("retrieved_documents", {})
+        documents = (retrieved.get("documents") or [[]])[0]
+        similarities = (retrieved.get("similarities") or [[]])[0]
+        if len(similarities) == len(documents):
+            documents = [with_similarity_badge(doc, sim) for doc, sim in zip(documents, similarities)]
         yield data.get("response", ""), documents

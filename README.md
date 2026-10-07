@@ -44,9 +44,9 @@ The integration itself is: `pilot3/` (the vendored pipeline — `server.py`, `pi
 - **~11 GB free disk and roughly 35 minutes for the first run.** Measured end-to-end on a
   Mac with an empty cache: 27 minutes to build both images (about 4 GB of wheels, including
   two separate torch installs), then 9 minutes on first startup while the pipeline downloads
-  LaBSE, LaBSE-TID and the Chroma index (3.6 GB) from HuggingFace. All three are public — no
+  LaBSE, LaBSE-TID, MiniLM-L6-TID and the two Chroma indexes (about 3.7 GB) from HuggingFace. All are public — no
   HF token needed. Disk goes to the UI image (4.3 GB), the pipeline image (2.4 GB), base
-  images (0.4 GB) and the model cache (3.6 GB).
+  images (0.4 GB) and the model cache (about 3.7 GB).
 
 
 ## 1. Clone and configure
@@ -119,10 +119,17 @@ takes effect on the next message.
 - `Baseline LaBSE` → `retriever_type=baseline`, stock `sentence-transformers/LaBSE`. Default.
 - `Fine-tuned LaBSE (TID)` → `retriever_type=finetuned`, the `Cutting3dg3/LaBSE-TID` model
   fine-tuned on the pilot's data.
+- `Fine-tuned MiniLM-L6, English (TID)` → `retriever_type=minilm_l6_tid`, the
+  `Cutting3dg3/MiniLM_L6_TID_d` model (English-only `all-MiniLM-L6-v2` fine-tuned with TID on
+  doc2dial; training code in `Pilot_3/mMiniLM`). Not meant for Greek input. As in its
+  training, it embeds only the last 5 turns, joined by `[SEP]`, up to 512 tokens.
 
-Both query the same Chroma collection and both are instantiated at server start, so
-switching costs nothing at query time. The server log line tells you which one ran:
-`[RETRIEVER:baseline]` or `[RETRIEVER:finetuned]`.
+The two LaBSE retrievers query the same Chroma collection. MiniLM-L6 queries its own index,
+`Cutting3dg3/minilm-tid-chromadb` (the same propositions, encoded by the base MiniLM-L6).
+All are instantiated at server start, so switching costs nothing at query time. The server
+log line tells you which one ran: `[RETRIEVER:baseline]`, `[RETRIEVER:finetuned]` or
+`[RETRIEVER:minilm_l6_tid]`.
+Similarity scores are not comparable across embedding models.
 
 **Response generator** (the `Available LLMs` radio). Only the two **Pilot3** entries are
 served by the pipeline; the list is filtered to them on this task:

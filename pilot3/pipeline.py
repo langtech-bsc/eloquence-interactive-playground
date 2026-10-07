@@ -1,6 +1,6 @@
 import threading
 
-from retriever import Retriever
+from retriever import Retriever, MiniLMRetriever
 from generator import Generator, AVAILABLE_MODELS
 
 
@@ -14,6 +14,7 @@ class RAGPipeline:
         self.retrievers = {
             "finetuned": Retriever(n_results=n_results, use_finetuned=True),
             "baseline": Retriever(n_results=n_results, use_finetuned=False),
+            "minilm_l6_tid": MiniLMRetriever("minilm_l6_tid", n_results=n_results),
         }
         self.current_llm = default_llm
         self.generator = Generator(model_name=AVAILABLE_MODELS[default_llm])

@@ -453,7 +453,8 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         index_name = gr.Radio(label="Index name", visible=False)
                         pilot3_retriever = gr.Radio(
                             label="Retriever",
-                            choices=[("Baseline LaBSE", "baseline"), ("Fine-tuned LaBSE (TID)", "finetuned")],
+                            choices=[("Baseline LaBSE", "baseline"), ("Fine-tuned LaBSE (TID)", "finetuned"),
+                                     ("Fine-tuned MiniLM-L6, English (TID)", "minilm_l6_tid")],
                             value="baseline",
                             visible=False,
                             elem_id="pilot3_retriever",
@@ -471,7 +472,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                             save_btn = gr.Button("Save History")
                     
                     with gr.Accordion("LLM Parameters", open=False, visible=False) as llm_params_accordion:
-                        temp = gr.Slider(0, 2, value=1.0, step=0.1, label="Temperature")
+                        temp = gr.Slider(0, 2, value=0.0, step=0.1, label="Temperature")
                         top_p = gr.Slider(0, 1, value=0.95, step=0.05, label="Top P")
                         max_tokens = gr.Slider(100, 4000, value=512, step=64, label="Max tokens")
                     
