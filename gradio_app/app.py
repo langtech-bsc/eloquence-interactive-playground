@@ -10,12 +10,14 @@ from typing import *
 import gradio as gr
 import markdown
 
-from fastapi import FastAPI, UploadFile, Form, File
-from pydantic import TypeAdapter
+from fastapi import FastAPI, UploadFile, Form, File, HTTPException
+from pydantic import TypeAdapter, ValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from gradio_app.helpers import  extract_docs_from_rendered_template
 from gradio_app.messages import *
+from gradio_app.backend.attention_summarization import ConversationSession, summarize_with_attention
 from retrievers.client import RetrieverClient
 from settings import settings, normalize_path_prefix
 from gradio_app.app_handlers import (
@@ -34,6 +36,10 @@ from gradio_app.app_handlers import (
     load_history_preview,
     load_history_confirm,
     summarize_conversation,
+    interact_with_attention,
+    clear_conversation_with_attention,
+    load_history_with_attention,
+    reset_attention_view,
     save_feedback,
     upload_file_for_ingest,
     validate_ingestion_inputs,
@@ -365,8 +371,22 @@ async def upload_audio_final(audio_file: UploadFile):
 @app.post("/query", response_model=ResponseQueryLLM)
 async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadFile] = File(None)):
     """Primary endpoint for submitting a single query to the LLM."""
-    request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
     try:
+        request_data = TypeAdapter(RequestQueryLLM).validate_json(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=json.loads(exc.json(include_context=False))) from exc
+    try:
+        if request_data.operation == "summarize":
+            if request_data.task_config != "Summarization":
+                raise ValueError("operation=summarize requires the Summarization task.")
+            if audio_file is not None:
+                raise ValueError("Attention summarization only supports text.")
+            result = await run_in_threadpool(
+                summarize_with_attention,
+                llm_handler, request_data.history, request_data.system_prompt,
+                request_data.temp, request_data.top_p, request_data.max_tokens,
+            )
+            return ResponseQueryLLM(text=result.summary, documents=[], summary_attention=result)
         response_text, documents, documents_metadata, transcription_metadata, transcription_turns = await query_llm_general(
             available_llms=llm_handler.available_llms,
             audio_file=audio_file,
@@ -516,7 +536,12 @@ examples = [
     "What computational resources are available?",
 ]
 
-with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CODE) as demo:
+with gr.Blocks(
+    theme=gr.themes.Monochrome(),
+    css=settings.CSS + "\n" + settings.ATTENTION_CSS,
+    js=f"async () => {{ await ({settings.JS_CODE})(); ({settings.ATTENTION_JS})(); }}",
+) as demo:
+    conversation_session = gr.State(ConversationSession())
     # --- PLAYGROUND TAB ---
     with gr.Tab("Playground"):
         with gr.Row():
@@ -579,6 +604,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                 with gr.Row(elem_id="summary_controls_row"):
                     with gr.Column(scale=6, min_width=0):
                         summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
+                        summary_html = gr.HTML(value="", visible=False, elem_id="summary_attention_view")
                     with gr.Column(scale=1, min_width=130, elem_id="summary_button_column"):
                         summarize_btn = gr.Button("Summarize\nconversation", visible=False, elem_id="summarize_btn")
 
@@ -643,7 +669,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     history_radio = gr.Radio(label="Saved Histories", interactive=True, elem_id="history_radio")
                     history_preview = gr.Textbox(label="Preview", lines=8, interactive=False)
                     with gr.Row():
-                        confirm_history_btn = gr.Button("Confirm")
+                        confirm_history_btn = gr.Button("Confirm", elem_id="load_history_confirm_btn")
                         close_history_btn = gr.Button("Close")
                 
                 # RAG context display
@@ -708,9 +734,9 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
         None
     ).success(
-        interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
+        interact_with_attention,
+        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [chatbot, context_html, rag_column, input_textbox, conversation_session, summary_box, summary_html]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
@@ -720,9 +746,9 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
         None
     ).success(
-        interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
+        interact_with_attention,
+        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [chatbot, context_html, rag_column, input_textbox, conversation_session, summary_box, summary_html]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
@@ -732,22 +758,22 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         [input_textbox, llm_name, docs_k, temp, top_p, index_name, task_config, audio_qa_mode, text_llm_name],
         None
     ).success(
-        interact,
-        [chatbot, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
-        [chatbot, context_html, rag_column, input_textbox]
+        interact_with_attention,
+        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [chatbot, context_html, rag_column, input_textbox, conversation_session, summary_box, summary_html]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
     )
     
     clear_btn.click(
-        clear_conversation,
-        [task_config, llm_name],
-        [chatbot, system_prompt, prompt_radio, summary_box, rag_column],
+        clear_conversation_with_attention,
+        [task_config, llm_name, conversation_session],
+        [chatbot, system_prompt, prompt_radio, summary_box, rag_column, conversation_session, summary_html],
     )
     summarize_btn.click(
         summarize_conversation,
-        [chatbot, llm_name, task_config, system_prompt, temp, top_p, max_tokens],
-        [summary_box],
+        [conversation_session, llm_name, task_config, system_prompt, temp, top_p, max_tokens],
+        [summary_box, summary_html, chatbot, conversation_session],
     )
     retrievers_radio.change(change_retriever, [retrievers_radio], [index_name])
     task_config.change(
@@ -788,6 +814,20 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         update_rag_params_visibility,
         [task_config],
         [rag_params_accordion],
+    ).then(
+        reset_attention_view,
+        [conversation_session, task_config],
+        [chatbot, conversation_session, summary_box, summary_html],
+    )
+    llm_name.change(
+        reset_attention_view,
+        [conversation_session, task_config],
+        [chatbot, conversation_session, summary_box, summary_html],
+    )
+    system_prompt.change(
+        reset_attention_view,
+        [conversation_session, task_config],
+        [chatbot, conversation_session, summary_box, summary_html],
     )
     audio_qa_mode.change(
         update_llm_choices,
@@ -844,7 +884,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     )
 
     save_prompt_btn.click(save_system_prompt, [system_prompt], [prompt_radio])
-    save_btn.click(store_history, [chatbot, system_prompt], [history_radio])
+    save_btn.click(store_history, [conversation_session, system_prompt], [history_radio])
     load_history_btn.click(lambda: gr.update(visible=True), None, [history_panel])
     close_history_btn.click(lambda: gr.update(visible=False), None, [history_panel])
     history_radio.change(
@@ -853,9 +893,9 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         [history_preview]
     )
     confirm_history_btn.click(
-        load_history_confirm,
-        [history_radio],
-        [chatbot, system_prompt, history_panel]
+        load_history_with_attention,
+        [history_radio, conversation_session],
+        [chatbot, system_prompt, history_panel, conversation_session, summary_box, summary_html]
     )
     
     chatbot.like(
@@ -865,7 +905,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
     )
     user_additional_feedback_submit.click(
         save_feedback,
-        [user_binary_feedback, chatbot, system_prompt, context_html, llm_name, user_additional_feedback],
+        [user_binary_feedback, conversation_session, system_prompt, context_html, llm_name, user_additional_feedback],
         [additional_feedback]
     )
 

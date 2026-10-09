@@ -18,7 +18,8 @@ from gradio_app.backend.BSCInteract import (
     SDialogInteractor,
     MeusliInteractor,
     LlamaInteractor,
-    DialogueManagerInteractor
+    DialogueManagerInteractor,
+    AttentionSummarizationInteractor,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +41,8 @@ class LLMHandler:
         "llama": LlamaInteractor,
         "sqa_salamandra_2b": SQASalamandra2BInteractor,
         "sqa_salamandra_7b": SQASalamandra7BInteractor,
-        "dialogue_manager": DialogueManagerInteractor
+        "dialogue_manager": DialogueManagerInteractor,
+        "attention_summarization": AttentionSummarizationInteractor,
     }
 
     def __init__(self, available_llms) -> None:
@@ -88,6 +90,16 @@ class LLMHandler:
             "api_key": model_entry.get("api_key"),
         }
 
+    def summarize_with_attention(self, prompt, **params):
+        # This operation is independent of the model selected for conversation.
+        # Per-request parameters never mutate a cached interactor shared by users.
+        configured = [name for name, entry in self.available_llms.items()
+                      if self._resolve_interactor(name, entry) == "attention_summarization"]
+        if len(configured) != 1:
+            raise ValueError("Configure exactly one attention_summarization service in models.json.")
+        interactor = self.get_llm_generator(configured[0])
+        return interactor.summarize(prompt, **params)
+
     def _resolve_interactor(self, model_name, model_entry, task_name=None):
         if task_name == "SDialog":
             return "sdialog"
@@ -125,6 +137,9 @@ class LLMHandler:
         # creates the interactor based on the interactor name specified in the configuration
         interactor_cls = self.INTERACTOR_CLASSES.get(interactor)
         if interactor_cls is not None:
+            if interactor == "attention_summarization":
+                base_kwargs["timeout"] = settings.ATTENTION_REQUEST_TIMEOUT
+                base_kwargs["tokenizer_path"] = model_entry.get("tokenizer_path")
             return interactor_cls(**base_kwargs)
 
         raise ValueError(f"Unknown interactor '{interactor}' for model '{model_name}'")

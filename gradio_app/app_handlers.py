@@ -14,6 +14,9 @@ from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.task_handlers import get_task_handler
 from gradio_app.backend.query_llm import LLMHandler
+from gradio_app.backend.attention_summarization import (
+    ConversationSession, render_attention, query_summary,
+)
 from gradio_app.helpers import replace_doc_links, _load_json, _save_json, remove_html_tags, \
     extract_docs_from_rendered_template, _get_user_filepath, check_llm_interface
 from retrievers.client import RetrieverClient
@@ -35,7 +38,10 @@ dynamic_data = {
 }
 with open(settings.MODELS_PATH) as f:
     available_llms = json.load(f)
-    available_llms = {model["display_name"]: model for model in available_llms}
+    available_llms = {
+        model.get("display_name") or model["model_name"]: model
+        for model in available_llms
+    }
 llm_handler = LLMHandler(available_llms)
 
 # --- Jinja2 Templates ---
@@ -121,7 +127,7 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=show_summary),
-            gr.update(visible=show_summary),
+            gr.update(visible=task_config.get("name") == "DM"),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -141,7 +147,7 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=show_summary),
-            gr.update(visible=show_summary),
+            gr.update(visible=task_config.get("name") == "DM"),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -161,7 +167,7 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=show_summary),
-            gr.update(visible=show_summary),
+            gr.update(visible=task_config.get("name") == "DM"),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -310,6 +316,8 @@ def save_system_prompt(request: gr.Request, system_prompt: str):
 
 def store_history(request: gr.Request, history: List[List[str]], system_prompt: str):
     """Saves the current conversation history for the user."""
+    if isinstance(history, ConversationSession):
+        history = history.history
     filepath = _get_user_filepath(request.username, USER_HISTORY_FILE)
     logs = _load_json(filepath)
     date_str = datetime.date.today().isoformat()
@@ -508,7 +516,7 @@ def validate_interaction(text, llm, top_k, temp, top_p, index_name, task_config,
 
 
 def summarize_conversation(
-    history,
+    session: ConversationSession,
     llm_name,
     task_config_str,
     system_prompt,
@@ -517,60 +525,117 @@ def summarize_conversation(
     max_tokens,
     request: gr.Request,
 ):
-    """Generates a summary for the full chat history using the selected LLM."""
-    if not llm_name:
-        raise gr.Error("Please select an LLM.")
-    if not history:
+    """Nemo generates summary + attention; DM keeps its existing end operation."""
+    if session.chat_running:
+        raise gr.Error("Wait for the assistant to finish responding before summarizing.")
+    if not session.history:
         raise gr.Error("No conversation to summarize.")
-
     task_config = json.loads(task_config_str) if task_config_str else settings.BASIC_CONFIG
     if task_config.get("interface") != "text":
         raise gr.Error("Summarization is only supported for text tasks.")
+    is_dm = task_config.get("name") == "DM"
+    if not is_dm and task_config.get("name") != "Summarization":
+        raise gr.Error("Select the Summarization task.")
+    session.summary_request += 1
+    summary_request, revision = session.summary_request, session.revision
+    history = deepcopy(session.history)
+    session.attention = None
+    yield (
+        gr.update(value="", visible=is_dm),
+        gr.update(value="Generating summary with Mistral-Nemo-Instruct-2407…", visible=not is_dm),
+        gr.update(value=history), session,
+    )
+    try:
+        if is_dm:
+            if not llm_name:
+                raise ValueError("Please select an LLM.")
+            payload = llm_handler.get_llm_generator(llm_name, task_name="DM").end(
+                _dialogue_manager_session_id(request)
+            )
+            summary = payload.get("summary")
+            if not isinstance(summary, str) or not summary.strip():
+                raise ValueError("The dialogue manager returned an empty summary.")
+            result = None
+        else:
+            result = query_summary(
+                history, llm_name, system_prompt, temp, top_p, max_tokens,
+                port=int(os.environ.get("GRADIO_SERVER_PORT", "8080")),
+                timeout=settings.ATTENTION_REQUEST_TIMEOUT + 15,
+            )
+            summary = result.summary
+    except Exception as exc:
+        if (revision == session.revision and summary_request == session.summary_request
+                and history == session.history):
+            yield gr.update(), gr.update(value="Summary generation failed."), gr.update(), session
+            raise gr.Error(str(exc)) from exc
+        return
+    if (revision != session.revision or summary_request != session.summary_request
+            or history != session.history):
+        return  # The user changed the conversation or requested a newer summary.
+    if result is not None:
+        summary_html, rendered = render_attention(history, result)
+        session.attention = result.model_dump()
+        yield gr.update(value="", visible=False), gr.update(value=summary_html, visible=True), rendered, session
+    else:
+        yield gr.update(value=summary.strip(), visible=True), gr.update(value="", visible=False), history, session
 
-    if task_config.get("name") == "DM":
-        payload = llm_handler.get_llm_generator(
-            llm_name,
-            task_name="DM",
-        ).end(_dialogue_manager_session_id(request))
-        summary = payload.get("summary")
-        if not isinstance(summary, str) or not summary.strip():
-            raise gr.Error("The dialogue manager returned an empty summary.")
-        return summary.strip()
 
-    turns = []
-    for user_msg, assistant_msg in history:
-        user_text = remove_html_tags(user_msg or "")
-        assistant_text = remove_html_tags(assistant_msg or "")
-        turns.append(f"User: {user_text}\nAssistant: {assistant_text}")
-    conversation_text = "\n\n".join(turns).strip()
-    if not conversation_text:
-        raise gr.Error("No conversation to summarize.")
-
-    query = (
-        "Summarize the following conversation in a concise paragraph:\n\n"
-        f"{conversation_text}"
+def reset_attention_view(session: ConversationSession, task_config_str):
+    session.invalidate()
+    task = json.loads(task_config_str) if task_config_str else {}
+    return (
+        deepcopy(session.history), session,
+        gr.update(value="", visible=task.get("name") == "DM"),
+        gr.update(value="Generate a summary, then select its text to inspect attention.",
+                  visible=task.get("name") == "Summarization"),
     )
 
-    summary = ""
-    stream = _process_llm_request(
-        llm_name,
-        system_prompt,
-        [],
-        query,
-        0,
-        "",
-        task_config,
-        dynamic_data["retriever_instance"],
-        temperature=temp,
-        top_p=top_p,
-        max_tokens=max_tokens,
-    )
 
-    for updated_history, _documents in stream:
-        if updated_history:
-            summary = updated_history[-1][1]
+def clear_conversation_with_attention(task_config_str, llm_name, session: ConversationSession,
+                                      request: gr.Request):
+    result = clear_conversation(task_config_str, llm_name, request)
+    session.replace_history([])
+    task = json.loads(task_config_str) if task_config_str else {}
+    return (*result, session, gr.update(value="", visible=task.get("name") == "Summarization"))
 
-    return summary
+
+def load_history_with_attention(request: gr.Request, selected_log: str, session: ConversationSession):
+    history, prompt, panel = load_history_confirm(request, selected_log)
+    if isinstance(history, dict):
+        if "value" not in history:
+            return history, prompt, panel, session, gr.update(), gr.update()
+        session.replace_history(history["value"])
+    else:
+        session.replace_history(history)
+    return history, prompt, panel, session, gr.update(value=""), gr.update(value="")
+
+
+def interact_with_attention(session: ConversationSession, input_text, llm_name, docs_k, temp,
+                            top_p, max_tokens, index_name, system_prompt, task_config_str,
+                            language=None, audio_qa_mode=None, text_llm_name=None,
+                            request: gr.Request = None):
+    session.invalidate()
+    session.chat_running = True
+    revision = session.revision
+    history = deepcopy(session.history)
+    task = json.loads(task_config_str) if task_config_str else {}
+    summary_box_update = gr.update(value="", visible=task.get("name") == "DM")
+    summary_html_update = gr.update(value="", visible=task.get("name") == "Summarization")
+    try:
+        yield history, gr.update(), gr.update(), gr.update(), session, summary_box_update, summary_html_update
+        for outputs in interact(
+            history, input_text, llm_name, docs_k, temp, top_p, max_tokens,
+            index_name, system_prompt, task_config_str, language, audio_qa_mode,
+            text_llm_name, request,
+        ):
+            if session.revision != revision:
+                return
+            session.history = deepcopy(outputs[0])
+            yield (*outputs, session, summary_box_update, summary_html_update)
+    finally:
+        # An obsolete stream must not release a newer stream's lock.
+        if session.revision == revision:
+            session.chat_running = False
 
 
 def _collect_llm_response(response):
@@ -706,6 +771,8 @@ def _get_feedback_df():
 def save_feedback(request: gr.Request, binary_feedback: str, chatbot: List, system_prompt: str, rag_html: str,
                   model_name: str, custom_feedback: str):
     """Saves user feedback to the shared feedback file."""
+    if isinstance(chatbot, ConversationSession):
+        chatbot = chatbot.history
     message = {
         "timestamp": datetime.datetime.now().isoformat(),
         "user": request.username,
@@ -840,7 +907,8 @@ def _get_online_models(available_llms):
         logger.warning("Model %s did not pass an availability check", model_name)
         return False
 
-    choices = [(llm, llm) for llm in available_llms.keys()]
+    choices = [(llm, llm) for llm in available_llms
+               if available_llms[llm].get("interface") != "service"]
     if probe_models:
         max_workers = min(8, max(1, len(choices)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
