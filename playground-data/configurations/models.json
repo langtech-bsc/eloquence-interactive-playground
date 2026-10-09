@@ -102,5 +102,14 @@
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:8004",
         "interface": "text"
+    },
+    {
+        "model_name": "Mistral-Nemo-Instruct-2407",
+        "interactor": "attention_summarization",
+        "display_name": "Nemo",
+        "api_key": "",
+        "api_endpoint": "http://127.0.0.1:5010/summarize_with_attention",
+        "tokenizer_path": "assets/tokenizers/nemo/tokenizer.json.gz",
+        "interface": "service"
     }
 ]

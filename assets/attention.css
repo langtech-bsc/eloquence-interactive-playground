@@ -1,0 +1,19 @@
+.attention-message,
+.attention-summary-text {
+    overflow-wrap: anywhere;
+}
+.attention-message { display: block; white-space: normal; }
+.attention-summary-text { white-space: pre-wrap; }
+.attention-token { border-radius: 2px; }
+#attention-summary {
+    border: 1px solid var(--border-color-primary, #ddd);
+    border-radius: 8px;
+    padding: 12px;
+}
+.attention-summary-label { font-weight: 600; margin-bottom: 8px; }
+.attention-summary-text { min-height: 4em; user-select: text; }
+.attention-summary-hint,
+.attention-summary-footer { font-size: 0.85em; opacity: 0.75; }
+.attention-summary-hint { margin-bottom: 10px; }
+.attention-summary-footer { margin-top: 10px; }
+.attention-stale .attention-summary-text { opacity: 0.6; }

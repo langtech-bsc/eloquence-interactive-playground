@@ -60,6 +60,8 @@ langchain-text-splitters==0.3.2
 langsmith==0.1.139
 Markdown==3.5.1
 markdown-it-py==3.0.0
+linkify-it-py==2.0.3
+uc-micro-py==2.0.0
 MarkupSafe==2.1.5
 marshmallow==3.23.1
 matplotlib==3.9.2

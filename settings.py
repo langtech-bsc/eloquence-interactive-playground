@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import List, Optional, Tuple
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
@@ -41,6 +42,9 @@ class Settings(BaseSettings):
     TOP_K_RERANK: int = 5
     SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt", "jsonl"]
     RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7997"
+    ATTENTION_REQUEST_TIMEOUT: int = 300
+    ATTENTION_CSS: str = (Path(__file__).resolve().parent / "assets/attention.css").read_text()
+    ATTENTION_JS: str = (Path(__file__).resolve().parent / "assets/attention.js").read_text()
     BASIC_CONFIG: dict = {"interface": "text", "RAG": False, "service": "local"}
     BASIC_AUDIO_CONFIG: dict = {"interface": "audio", "RAG": False, "service": "local"}
     
@@ -549,7 +553,7 @@ async () => {
         const targetNode = document.querySelector('[aria-label="chatbot conversation"]');
         if (!targetNode) return;
 
-        const config = { attributes: true, childList: true, subtree: true };
+        const config = { childList: true, subtree: true, characterData: true };
         const callback = (mutationList, observer) => {
             targetNode.scrollTop = targetNode.scrollHeight;
         };
@@ -727,13 +731,33 @@ async () => {
         return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
     };
 
+    const cancelInputFocus = () => {
+        clearInterval(focusRetryTimer);
+        clearTimeout(postReplyFocusTimer);
+        focusRetryTimer = null;
+        postReplyFocusTimer = null;
+    };
+
+    // A pending reply timer must never clear a newly made summary selection.
+    document.addEventListener("pointerdown", (event) => {
+        if (event.target.closest?.("#attention-summary")) cancelInputFocus();
+    }, true);
+
     const queueInputFocus = () => {
+        if (document.getElementById("attention-summary")) {
+            cancelInputFocus();
+            return;
+        }
         if (focusRetryTimer) {
             clearInterval(focusRetryTimer);
             focusRetryTimer = null;
         }
         let attempts = 0;
         focusRetryTimer = setInterval(() => {
+            if (document.getElementById("attention-summary")) {
+                cancelInputFocus();
+                return;
+            }
             attempts += 1;
             const textarea = getInputTextarea();
             if (textarea && !textarea.disabled && isVisible(textarea)) {
@@ -831,6 +855,11 @@ async () => {
     const chatNode = document.querySelector('[aria-label="chatbot conversation"]');
     if (chatNode) {
         const replyObserver = new MutationObserver(() => {
+            // Clear earlier timers too, including timers queued before rendering.
+            if (document.getElementById("attention-summary") || chatNode.querySelector('.attention-message')) {
+                cancelInputFocus();
+                return;
+            }
             if (postReplyFocusTimer) {
                 clearTimeout(postReplyFocusTimer);
             }

@@ -9,6 +9,7 @@ import tenacity
 from jinja2 import Environment, FileSystemLoader
 
 from gradio_app.backend.ChatGptInteractor import apx_num_tokens_from_messages
+from gradio_app.backend.attention_summarization import align_attention_offsets
 from gradio_app.helpers import reverse_doc_links, encode_audio_stream
 from settings import settings
 
@@ -394,6 +395,52 @@ class SalamandraInteractor(BSCInteractor):
                     "content": reverse_doc_links(a),
                 })
         return messages
+
+
+class AttentionSummarizationInteractor:
+    """Call the attention endpoint and align its token offsets."""
+
+    # Reuse the sidecar's preloaded Nemo instance.
+    _SERVICE_MODEL_ALIASES = {
+        "Mistral-Nemo-Instruct-2407": "nemo",
+        "mistralai/Mistral-Nemo-Instruct-2407": "nemo",
+    }
+
+    def __init__(self, api_endpoint, model_name="nemo", api_key=None,
+                 timeout=300, tokenizer_path=None):
+        self.api_endpoint = api_endpoint.rstrip("/")
+        if not self.api_endpoint.endswith("/summarize_with_attention"):
+            self.api_endpoint += "/summarize_with_attention"
+        self.model_name = self._SERVICE_MODEL_ALIASES.get(model_name, model_name)
+        self.timeout = timeout
+        self.tokenizer_path = tokenizer_path
+        self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    def summarize(self, prompt, max_tokens=300, temperature=0.0, top_p=1.0):
+        try:
+            response = requests.post(
+                self.api_endpoint,
+                params={"model": self.model_name},
+                headers=self.headers,
+                json={
+                    "prompt": prompt,
+                    "max_new_tokens": max_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    # Match /demo: keep the strongest 16 entries per attention row.
+                    "top_k": 16,
+                },
+                timeout=(10, self.timeout),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if self.tokenizer_path:
+                payload = align_attention_offsets(payload, self.tokenizer_path)
+            return payload
+        except (requests.RequestException, ValueError) as exc:
+            raise RuntimeError(
+                f"Nemo attention summarization failed at {self.api_endpoint}: {exc}"
+            ) from exc
 
 
 class DialogueManagerInteractor:
