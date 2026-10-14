@@ -2,10 +2,10 @@ Based on https://huggingface.co/spaces/akazakov/rag-gradio-sample-project/tree/m
 
 ## Summarization with Nemo attention
 
-The **Summarization** task uses the selected LLM for conversation. Clicking
-**Summarize conversation** generates the summary with the separate Nemo attention
-service. Select text in **Summary** to highlight the corresponding tokens inside
-the conversation bubbles. Press ESC or click the conversation to clear the
+The **Summarization** and **DM** tasks both generate summaries with the separate
+Nemo attention service when clicking **Summarize conversation**. Conversation
+continues through the selected LLM or dialogue manager. Select text in **Summary**
+to highlight the corresponding tokens inside the conversation bubbles. Press ESC or click the conversation to clear the
 highlight. Attention is an interpretation, not a causal explanation.
 
 Start the attention service separately; IP does not start or download a model.
@@ -26,11 +26,12 @@ alias `model=nemo`, reusing its bundled weights and
 preloaded model instead of loading another instance. Summarization uses
 `top_k=16`, retaining the strongest 16 entries per attention row, matching the
 standalone `/demo` default. This filters the visualization response without
-changing summary generation. Existing DM summaries keep their dialogue-manager
-endpoint.
+changing summary generation. In DM, summarizing does not end or reset the
+dialogue-manager session; **Clear conversation** still resets it.
 
 The button posts `operation: "summarize"` to the IP's existing form-encoded
 `/query`, which resolves the interactor from `models.json` and calls Nemo.
+Both `task_config: "Summarization"` and `task_config: "DM"` support this operation.
 The local IP port comes from `GRADIO_SERVER_PORT` (default 8080).
 API clients can use the same operation:
 

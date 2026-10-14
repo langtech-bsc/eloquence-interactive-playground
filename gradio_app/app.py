@@ -377,8 +377,8 @@ async def query_llm_endpoint(body: str = Form(...), audio_file: Optional[UploadF
         raise HTTPException(status_code=422, detail=json.loads(exc.json(include_context=False))) from exc
     try:
         if request_data.operation == "summarize":
-            if request_data.task_config != "Summarization":
-                raise ValueError("operation=summarize requires the Summarization task.")
+            if request_data.task_config not in {"Summarization", "DM"}:
+                raise ValueError("operation=summarize requires the Summarization or DM task.")
             if audio_file is not None:
                 raise ValueError("Attention summarization only supports text.")
             result = await run_in_threadpool(
