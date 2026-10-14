@@ -127,7 +127,7 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=show_summary),
-            gr.update(visible=task_config.get("name") == "DM"),
+            gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -147,7 +147,7 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=show_summary),
-            gr.update(visible=task_config.get("name") == "DM"),
+            gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -167,7 +167,7 @@ def load_task(task_config):
             gr.update(visible=rag_enabled),
             gr.update(visible=rag_enabled),
             gr.update(visible=show_summary),
-            gr.update(visible=task_config.get("name") == "DM"),
+            gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
         )
@@ -523,9 +523,8 @@ def summarize_conversation(
     temp,
     top_p,
     max_tokens,
-    request: gr.Request,
 ):
-    """Nemo generates summary + attention; DM keeps its existing end operation."""
+    """Generate summary and attention for Summarization and DM."""
     if session.chat_running:
         raise gr.Error("Wait for the assistant to finish responding before summarizing.")
     if not session.history:
@@ -533,36 +532,24 @@ def summarize_conversation(
     task_config = json.loads(task_config_str) if task_config_str else settings.BASIC_CONFIG
     if task_config.get("interface") != "text":
         raise gr.Error("Summarization is only supported for text tasks.")
-    is_dm = task_config.get("name") == "DM"
-    if not is_dm and task_config.get("name") != "Summarization":
-        raise gr.Error("Select the Summarization task.")
+    if task_config.get("name") not in {"Summarization", "DM"}:
+        raise gr.Error("Select the Summarization or DM task.")
     session.summary_request += 1
     summary_request, revision = session.summary_request, session.revision
     history = deepcopy(session.history)
     session.attention = None
     yield (
-        gr.update(value="", visible=is_dm),
-        gr.update(value="Generating summary with Mistral-Nemo-Instruct-2407…", visible=not is_dm),
+        gr.update(value="", visible=False),
+        gr.update(value="Generating summary with Mistral-Nemo-Instruct-2407…", visible=True),
         gr.update(value=history), session,
     )
     try:
-        if is_dm:
-            if not llm_name:
-                raise ValueError("Please select an LLM.")
-            payload = llm_handler.get_llm_generator(llm_name, task_name="DM").end(
-                _dialogue_manager_session_id(request)
-            )
-            summary = payload.get("summary")
-            if not isinstance(summary, str) or not summary.strip():
-                raise ValueError("The dialogue manager returned an empty summary.")
-            result = None
-        else:
-            result = query_summary(
-                history, llm_name, system_prompt, temp, top_p, max_tokens,
-                port=int(os.environ.get("GRADIO_SERVER_PORT", "8080")),
-                timeout=settings.ATTENTION_REQUEST_TIMEOUT + 15,
-            )
-            summary = result.summary
+        result = query_summary(
+            history, llm_name, system_prompt, temp, top_p, max_tokens,
+            task_config=task_config["name"],
+            port=int(os.environ.get("GRADIO_SERVER_PORT", "8080")),
+            timeout=settings.ATTENTION_REQUEST_TIMEOUT + 15,
+        )
     except Exception as exc:
         if (revision == session.revision and summary_request == session.summary_request
                 and history == session.history):
@@ -572,12 +559,9 @@ def summarize_conversation(
     if (revision != session.revision or summary_request != session.summary_request
             or history != session.history):
         return  # The user changed the conversation or requested a newer summary.
-    if result is not None:
-        summary_html, rendered = render_attention(history, result)
-        session.attention = result.model_dump()
-        yield gr.update(value="", visible=False), gr.update(value=summary_html, visible=True), rendered, session
-    else:
-        yield gr.update(value=summary.strip(), visible=True), gr.update(value="", visible=False), history, session
+    summary_html, rendered = render_attention(history, result)
+    session.attention = result.model_dump()
+    yield gr.update(value="", visible=False), gr.update(value=summary_html, visible=True), rendered, session
 
 
 def reset_attention_view(session: ConversationSession, task_config_str):
@@ -585,9 +569,9 @@ def reset_attention_view(session: ConversationSession, task_config_str):
     task = json.loads(task_config_str) if task_config_str else {}
     return (
         deepcopy(session.history), session,
-        gr.update(value="", visible=task.get("name") == "DM"),
+        gr.update(value="", visible=False),
         gr.update(value="Generate a summary, then select its text to inspect attention.",
-                  visible=task.get("name") == "Summarization"),
+                  visible=task.get("name") in {"Summarization", "DM"}),
     )
 
 
@@ -596,7 +580,7 @@ def clear_conversation_with_attention(task_config_str, llm_name, session: Conver
     result = clear_conversation(task_config_str, llm_name, request)
     session.replace_history([])
     task = json.loads(task_config_str) if task_config_str else {}
-    return (*result, session, gr.update(value="", visible=task.get("name") == "Summarization"))
+    return (*result, session, gr.update(value="", visible=task.get("name") in {"Summarization", "DM"}))
 
 
 def load_history_with_attention(request: gr.Request, selected_log: str, session: ConversationSession):
@@ -619,8 +603,8 @@ def interact_with_attention(session: ConversationSession, input_text, llm_name, 
     revision = session.revision
     history = deepcopy(session.history)
     task = json.loads(task_config_str) if task_config_str else {}
-    summary_box_update = gr.update(value="", visible=task.get("name") == "DM")
-    summary_html_update = gr.update(value="", visible=task.get("name") == "Summarization")
+    summary_box_update = gr.update(value="", visible=False)
+    summary_html_update = gr.update(value="", visible=task.get("name") in {"Summarization", "DM"})
     try:
         yield history, gr.update(), gr.update(), gr.update(), session, summary_box_update, summary_html_update
         for outputs in interact(

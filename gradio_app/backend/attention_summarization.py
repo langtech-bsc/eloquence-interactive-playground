@@ -211,10 +211,11 @@ def summarize_with_attention(llm_handler, history, system_prompt=None,
 
 
 def query_summary(history, llm_name, system_prompt=None, temperature=None,
-                  top_p=None, max_tokens=None, *, port=8080, timeout=315):
+                  top_p=None, max_tokens=None, *, port=8080, timeout=315,
+                  task_config="Summarization"):
     """The browser callback submits the same /query request as API clients."""
     body = RequestQueryLLM(
-        operation="summarize", task_config="Summarization",
+        operation="summarize", task_config=task_config,
         history=history, llm_name=llm_name or "", input_text="",
         system_prompt=system_prompt, docs_k=0, temp=temperature, top_p=top_p,
         max_tokens=max_tokens, index_name=None,

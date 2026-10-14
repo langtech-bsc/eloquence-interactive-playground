@@ -98,13 +98,13 @@ def ui_namespace(handler=None):
         "query_summary": Mock(side_effect=submit_query),
         "llm_handler": handler,
         "settings": SimpleNamespace(BASIC_CONFIG={}, ATTENTION_REQUEST_TIMEOUT=300),
-        "List": List,
+        "List": List, "LANGUAGE_CHOICES": ["en"],
         "_dialogue_manager_session_id": lambda request: "session-test",
     }
     return load_definitions("gradio_app/app_handlers.py", {
         "summarize_conversation", "reset_attention_view", "interact_with_attention",
         "clear_conversation_with_attention", "load_history_with_attention",
-        "store_history", "save_feedback",
+        "store_history", "save_feedback", "load_task",
     }, namespace)
 
 
@@ -430,28 +430,34 @@ class AttentionTests(unittest.TestCase):
 
     def test_query_summary_returns_full_metadata_and_uses_nemo(self):
         client, namespace = self.api_client()
-        body = dict(self.api_body(), operation="summarize")
-        response = client.post("/query", data={"body": json.dumps(body)})
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["text"], "Tiene fiebre 😊.")
-        self.assertEqual(payload["summary_attention"]["model"], "/models/nemo")
-        self.assertEqual(len(payload["summary_attention"]["message_spans"]), 2)
+        for task in ("Summarization", "DM"):
+            with self.subTest(task=task):
+                body = dict(self.api_body(), operation="summarize", task_config=task)
+                response = client.post("/query", data={"body": json.dumps(body)})
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(payload["text"], "Tiene fiebre 😊.")
+                self.assertEqual(payload["summary_attention"]["model"], "/models/nemo")
+                self.assertEqual(len(payload["summary_attention"]["message_spans"]), 2)
         namespace["query_llm_general"].assert_not_awaited()
 
     def test_query_default_keeps_chat_path_and_does_not_call_nemo(self):
         client, namespace = self.api_client()
-        response = client.post("/query", data={"body": json.dumps(self.api_body())}).json()
-        self.assertEqual(response["text"], "Selected model answer")
-        self.assertIsNone(response["summary_attention"])
+        for task in ("Summarization", "DM"):
+            with self.subTest(task=task):
+                body = dict(self.api_body(), task_config=task)
+                response = client.post("/query", data={"body": json.dumps(body)}).json()
+                self.assertEqual(response["text"], "Selected model answer")
+                self.assertIsNone(response["summary_attention"])
+                self.assertEqual(namespace["query_llm_general"].call_args.kwargs["task_config"], task)
         self.handler.summarize_with_attention.assert_not_called()
-        namespace["query_llm_general"].assert_awaited_once()
+        self.assertEqual(namespace["query_llm_general"].await_count, 2)
 
     def test_query_rejects_wrong_task_and_reports_service_errors(self):
         client, _ = self.api_client()
         body = dict(self.api_body(), operation="summarize", task_config="Basic LLM")
         result = client.post("/query", data={"body": json.dumps(body)}).json()
-        self.assertIn("requires the Summarization task", result["error"])
+        self.assertIn("requires the Summarization or DM task", result["error"])
         self.handler.summarize_with_attention.side_effect = RuntimeError("Nemo unavailable")
         body["task_config"] = "Summarization"
         result = client.post("/query", data={"body": json.dumps(body)}).json()
@@ -474,7 +480,7 @@ class AttentionTests(unittest.TestCase):
     def summary_generator(self, namespace, session, task="Summarization"):
         return namespace["summarize_conversation"](
             session, "Selected conversation model", json.dumps({"name": task, "interface": "text"}),
-            "", 0, 1, 150, None,
+            "", 0, 1, 150,
         )
 
     def test_ui_keeps_canonical_history_and_session_isolation(self):
@@ -563,28 +569,57 @@ class AttentionTests(unittest.TestCase):
         self.assertEqual(list(first), [])
         self.assertEqual(len(list(second)), 1)
 
-    def test_dm_keeps_dialogue_manager_summary(self):
-        self.handler.get_llm_generator.return_value.end.return_value = {"summary": "DM summary"}
+    def test_dm_uses_nemo_attention_without_ending_dialogue_session(self):
         namespace = ui_namespace(self.handler)
         session = ConversationSession(history=deepcopy(self.history))
         result = list(self.summary_generator(namespace, session, task="DM"))[-1]
-        self.assertEqual(result[0]["value"], "DM summary")
-        self.assertFalse(result[1]["visible"])
-        self.handler.summarize_with_attention.assert_not_called()
+        self.assertFalse(result[0]["visible"])
+        self.assertTrue(result[1]["visible"])
+        self.assertIn("See below a summary of the conversation.", result[1]["value"])
+        self.assertIn("For explainability, select summary text", result[1]["value"])
+        self.assertIn("Darker yellow indicates higher attention. ESC clears the highlight.", result[1]["value"])
+        self.assertIn("Attention is an interpretation, not a causal explanation.", result[1]["value"])
+        self.assertIn("attention-message", result[2][0][0])
+        self.assertEqual(session.attention["summary"], "Tiene fiebre 😊.")
+        self.assertEqual(session.history, self.history)
+        self.assertEqual(namespace["query_summary"].call_args.kwargs["task_config"], "DM")
+        self.handler.summarize_with_attention.assert_called_once()
+        self.handler.get_llm_generator.assert_not_called()
+
+    def test_summary_controls_and_reset_show_attention_for_both_tasks(self):
+        namespace = ui_namespace(self.handler)
+        for task in ("Summarization", "DM", "Basic LLM"):
+            with self.subTest(task=task):
+                config = json.dumps({"name": task, "interface": "text"})
+                controls = namespace["load_task"](config)
+                enabled = task in {"Summarization", "DM"}
+                self.assertEqual(controls[9]["visible"], enabled)
+                self.assertFalse(controls[10]["visible"])
+                session = ConversationSession(history=deepcopy(self.history), attention={"old": True})
+                reset = namespace["reset_attention_view"](session, config)
+                self.assertEqual(reset[0], self.history)
+                self.assertIsNone(session.attention)
+                self.assertFalse(reset[2]["visible"])
+                self.assertEqual(reset[3]["visible"], enabled)
 
     def test_normal_conversation_uses_original_history_and_selected_model(self):
-        namespace = ui_namespace(self.handler)
-        session = ConversationSession(history=deepcopy(self.history), attention={"old": True})
-        new_history = self.history + [["Nueva pregunta", "Respuesta"]]
-        namespace["interact"] = Mock(return_value=iter([(new_history, "", gr.update(), gr.update())]))
-        list(namespace["interact_with_attention"](
-            session, "Nueva pregunta", "Selected conversation model", 0, 0, 1, 150,
-            "", "", '{"name":"Summarization"}',
-        ))
-        self.assertEqual(namespace["interact"].call_args.args[0], self.history)
-        self.assertEqual(namespace["interact"].call_args.args[2], "Selected conversation model")
-        self.assertEqual(session.history, new_history)
-        self.assertIsNone(session.attention)
+        for task in ("Summarization", "DM"):
+            with self.subTest(task=task):
+                namespace = ui_namespace(self.handler)
+                session = ConversationSession(history=deepcopy(self.history), attention={"old": True})
+                new_history = self.history + [["Nueva pregunta", "Respuesta"]]
+                namespace["interact"] = Mock(return_value=iter([(new_history, "", gr.update(), gr.update())]))
+                outputs = list(namespace["interact_with_attention"](
+                    session, "Nueva pregunta", "Selected conversation model", 0, 0, 1, 150,
+                    "", "", json.dumps({"name": task}),
+                ))
+                self.assertEqual(namespace["interact"].call_args.args[0], self.history)
+                self.assertEqual(namespace["interact"].call_args.args[2], "Selected conversation model")
+                self.assertEqual(json.loads(namespace["interact"].call_args.args[9])["name"], task)
+                self.assertEqual(session.history, new_history)
+                self.assertIsNone(session.attention)
+                self.assertFalse(outputs[-1][5]["visible"])
+                self.assertTrue(outputs[-1][6]["visible"])
 
     def test_save_uses_canonical_history_after_highlighting(self):
         namespace = ui_namespace(self.handler)

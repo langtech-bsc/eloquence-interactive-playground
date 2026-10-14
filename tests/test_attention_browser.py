@@ -29,7 +29,8 @@ def production_js():
     return f"async () => {{ await ({general})(); ({attention})(); }}"
 
 
-def test_selection_in_real_gradio_bubbles_and_stale_results():
+@pytest.mark.parametrize("task_name", ["Summarization", "DM"])
+def test_selection_in_real_gradio_bubbles_and_stale_results(task_name):
     history = [["Tengo fiebre 😊 y <script>alert(1)</script>.",
                 '**Recomendación:** consulta [la guía](https://example.com). '
                 '<a href="#document-0">[0]</a> y `x < y`.\n'
@@ -52,7 +53,7 @@ def test_selection_in_real_gradio_bubbles_and_stale_results():
     ]))
     with gr.Blocks(js=production_js(), css=(ROOT / "assets/attention.css").read_text()) as demo:
         session = gr.State(ConversationSession(history=deepcopy(history)))
-        task = gr.State('{"name":"Summarization","interface":"text"}')
+        task = gr.State(json.dumps({"name": task_name, "interface": "text"}))
         system = gr.State("")
         temperature, top_p, maximum = gr.State(0), gr.State(1), gr.State(150)
         model = gr.Radio(["Selected conversation model"], value="Selected conversation model", elem_id="llm_name")
@@ -104,6 +105,10 @@ def test_selection_in_real_gradio_bubbles_and_stale_results():
             page.wait_for_timeout(20)
             page.locator("#summarize_btn").click()
             page.wait_for_selector("#attention-summary .attention-token")
+            assert page.locator(".attention-summary-label").inner_text() == "See below a summary of the conversation."
+            assert "For explainability, select summary text" in page.locator(".attention-summary-hint").inner_text()
+            assert namespace["query_summary"].call_args.kwargs["task_config"] == task_name
+            handler.get_llm_generator.assert_not_called()
             assert page.locator("#chatbot .attention-message").first.inner_text() == history[0][0]
             assert page.locator("#chatbot script").count() == 0
             assert page.locator("#chatbot strong").count() == 1
