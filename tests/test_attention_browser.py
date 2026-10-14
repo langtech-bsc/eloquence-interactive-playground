@@ -59,7 +59,7 @@ def test_selection_in_real_gradio_bubbles_and_stale_results(task_name):
         model = gr.Radio(["Selected conversation model"], value="Selected conversation model", elem_id="llm_name")
         chat = gr.Chatbot(value=history, sanitize_html=False, elem_id="chatbot")
         summary_box = gr.Textbox(visible=False)
-        summary_html = gr.HTML()
+        summary_html = gr.HTML(elem_id="summary_attention_view")
         summarize_button = gr.Button("Summarize conversation", elem_id="summarize_btn")
         text = gr.Textbox(elem_id="input_textbox")
         submit = gr.Button("Submit", elem_id="submit_btn")
@@ -184,6 +184,11 @@ def test_selection_in_real_gradio_bubbles_and_stale_results(task_name):
             page.locator("#submit_btn").click()
             page.wait_for_function("() => document.querySelector('#chatbot').innerText.includes('Respuesta parcial')")
             assert chat_entered.wait(5)
+            page.wait_for_selector("#summary_attention_view .wrap.generating", state="attached")
+            # An empty summary must not show Gradio's streaming border as a line.
+            assert page.locator("#summary_attention_view .wrap.generating").evaluate(
+                "node => node.getBoundingClientRect().height"
+            ) == 0
             page.locator("#summarize_btn").click()
             page.wait_for_function("() => document.body.innerText.includes('finish responding')")
             assert handler.summarize_with_attention.call_count == calls_before

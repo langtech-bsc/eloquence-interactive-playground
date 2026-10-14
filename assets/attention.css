@@ -17,3 +17,6 @@
 .attention-summary-hint { margin-bottom: 10px; }
 .attention-summary-footer { margin-top: 10px; }
 .attention-stale .attention-summary-text { opacity: 0.6; }
+
+/* Avoid a collapsed streaming border above an empty summary. */
+#summary_attention_view .wrap.generating { border: 0; }
