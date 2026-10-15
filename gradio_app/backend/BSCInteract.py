@@ -444,14 +444,18 @@ class AttentionSummarizationInteractor:
 
 
 class DialogueManagerInteractor:
+    CHAT_PATHS = {
+        "sr": "/v1/chat/uns_dm",
+        "en": "/v1/chat/uns_dm_eng",
+    }
 
-    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None, temperature=None, top_p=None, stream=False):
-
-        # Configure the base service URL, not the individual chat endpoint.
+    def __init__(self, api_endpoint, model_name, api_key=None, max_tokens=None,
+                 temperature=None, top_p=None, stream=False, language="sr"):
         self.api_endpoint = api_endpoint.rstrip("/")
         self.model_name = model_name
-
-        self.chat_endpoint = f"{self.api_endpoint}/v1/chat/uns_dm"
+        if language not in self.CHAT_PATHS:
+            raise ValueError("Dialogue-manager language must be English (en) or Serbian (sr).")
+        self.chat_endpoint = f"{self.api_endpoint}{self.CHAT_PATHS[language]}"
         self.reset_endpoint = f"{self.api_endpoint}/reset"
         self.end_endpoint = f"{self.api_endpoint}/end"
 

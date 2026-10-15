@@ -1,5 +1,34 @@
 Based on https://huggingface.co/spaces/akazakov/rag-gradio-sample-project/tree/main/gradio_app
 
+## NurseLLM: English and Serbian dialogue managers
+
+Select **DM**, choose **NurseLLM**, and use **Language** below the conversation
+and above **Summary**. Serbian is the default. Changing language starts a fresh
+conversation and clears the summary. **Clear** resets the selected language's
+session; browser sessions stay separate.
+
+Configure both URLs in the single `NurseLLM` entry in
+`playground-data/configurations/models.json`:
+
+```json
+"default_language": "sr",
+"language_endpoints": {
+    "sr": "http://127.0.0.1:8004",
+    "en": "http://127.0.0.1:8005"
+}
+```
+
+Both use `DialogueManagerInteractor`: Serbian calls `/v1/chat/uns_dm`, English
+calls `/v1/chat/uns_dm_eng`. Start the DM services and their NER/LLM backends
+separately. Summaries use the existing Nemo service.
+
+Tests:
+
+```bash
+python -m unittest discover -s tests -p test_dialogue_manager_languages.py -v
+python -m unittest discover -s tests -p test_attention_summarization.py -v
+```
+
 ## Summarization with Nemo attention
 
 The **Summarization** and **DM** tasks both generate summaries with the separate

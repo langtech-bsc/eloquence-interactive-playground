@@ -738,13 +738,15 @@ async () => {
         postReplyFocusTimer = null;
     };
 
+    const dmLanguageFocused = () => !!document.activeElement?.closest?.("#dm_language");
+
     // A pending reply timer must never clear a newly made summary selection.
     document.addEventListener("pointerdown", (event) => {
-        if (event.target.closest?.("#attention-summary")) cancelInputFocus();
+        if (event.target.closest?.("#attention-summary, #dm_language")) cancelInputFocus();
     }, true);
 
     const queueInputFocus = () => {
-        if (document.getElementById("attention-summary")) {
+        if (document.getElementById("attention-summary") || dmLanguageFocused()) {
             cancelInputFocus();
             return;
         }
@@ -754,7 +756,7 @@ async () => {
         }
         let attempts = 0;
         focusRetryTimer = setInterval(() => {
-            if (document.getElementById("attention-summary")) {
+            if (document.getElementById("attention-summary") || dmLanguageFocused()) {
                 cancelInputFocus();
                 return;
             }
@@ -856,7 +858,7 @@ async () => {
     if (chatNode) {
         const replyObserver = new MutationObserver(() => {
             // Clear earlier timers too, including timers queued before rendering.
-            if (document.getElementById("attention-summary") || chatNode.querySelector('.attention-message')) {
+            if (document.getElementById("attention-summary") || chatNode.querySelector('.attention-message') || dmLanguageFocused()) {
                 cancelInputFocus();
                 return;
             }
