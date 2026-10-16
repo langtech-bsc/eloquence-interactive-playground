@@ -130,6 +130,7 @@ def load_task(task_config):
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
+            gr.update(visible=False),
         )
     elif "text" in interfaces and "audio" in interfaces:
         return (
@@ -150,6 +151,7 @@ def load_task(task_config):
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
+            gr.update(visible=False),
         )
     else:
         return (
@@ -170,6 +172,7 @@ def load_task(task_config):
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=rag_enabled),
+            gr.update(visible=task_config.get("name") == "DM"),
         )
 
 
@@ -576,8 +579,8 @@ def reset_attention_view(session: ConversationSession, task_config_str):
 
 
 def clear_conversation_with_attention(task_config_str, llm_name, session: ConversationSession,
-                                      request: gr.Request):
-    result = clear_conversation(task_config_str, llm_name, request)
+                                      request: gr.Request, dm_language=None):
+    result = clear_conversation(task_config_str, llm_name, request, language=dm_language)
     session.replace_history([])
     task = json.loads(task_config_str) if task_config_str else {}
     return (*result, session, gr.update(value="", visible=task.get("name") in {"Summarization", "DM"}))
@@ -597,12 +600,14 @@ def load_history_with_attention(request: gr.Request, selected_log: str, session:
 def interact_with_attention(session: ConversationSession, input_text, llm_name, docs_k, temp,
                             top_p, max_tokens, index_name, system_prompt, task_config_str,
                             language=None, audio_qa_mode=None, text_llm_name=None,
-                            request: gr.Request = None):
+                            request: gr.Request = None, dm_language=None):
     session.invalidate()
     session.chat_running = True
     revision = session.revision
     history = deepcopy(session.history)
     task = json.loads(task_config_str) if task_config_str else {}
+    if task.get("name") == "DM":
+        language = dm_language or "sr"
     summary_box_update = gr.update(value="", visible=False)
     summary_html_update = gr.update(value="", visible=task.get("name") in {"Summarization", "DM"})
     try:
@@ -712,7 +717,7 @@ def interact(history, input_text, llm_name, docs_k, temp, top_p, max_tokens, ind
 
     session_id = None
     if task_config.get("name") == "DM":
-        session_id = _dialogue_manager_session_id(request)
+        session_id = _dialogue_manager_session_id(request, language)
 
     stream = _process_llm_request(
         llm_name, system_prompt, history, input_text, docs_k, index_name,
@@ -860,7 +865,8 @@ def _get_online_models(available_llms):
             headers["Authorization"] = f"Bearer {entry['api_key']}"
 
         if _is_dialogue_manager_model(model_name):
-            check_urls = [f"{base_endpoint}/docs"]
+            endpoints = entry.get("language_endpoints") or {"sr": base_endpoint}
+            check_urls = [f"{endpoint.rstrip('/')}/docs" for endpoint in endpoints.values()]
         else:
             check_urls = [
                 f"{base_endpoint}/health",
@@ -925,21 +931,32 @@ def _get_online_models(available_llms):
     default_model = online_choices[0][1] if online_choices else None
     return gr.Radio(label="Available LLMs", choices=online_choices, value=default_model), dynamic_data["online_llms"]
 
-def _dialogue_manager_session_id(request: gr.Request) -> str:
+def _dialogue_manager_session_id(request: gr.Request, language=None) -> str:
     session_hash = getattr(request, "session_hash", None)
     if not session_hash:
         raise gr.Error("Unable to identify the current browser session.")
 
-    return f"gradio-{session_hash}"
+    return f"gradio-{session_hash}-{language or 'sr'}"
 
 
-def clear_conversation(task_config_str, llm_name, request: gr.Request):
+def clear_conversation(task_config_str, llm_name, request: gr.Request, language=None):
     task = json.loads(task_config_str) if task_config_str else {}
     if task.get("name") == "DM" and llm_name:
-        llm_handler.get_llm_generator(llm_name, task_name="DM").reset(
-            _dialogue_manager_session_id(request)
+        llm_handler.get_llm_generator(llm_name, task_name="DM", language=language).reset(
+            _dialogue_manager_session_id(request, language)
         )
     return [], "", gr.update(value=None), "", gr.update(visible=False)
+
+
+def change_dm_language(task_config_str, llm_name, session: ConversationSession,
+                       dm_language, request: gr.Request):
+    task = json.loads(task_config_str) if task_config_str else {}
+    if task.get("name") != "DM":
+        return gr.update(), session, gr.update(), gr.update()
+    # Invalidate in-flight chat/summary results before resetting the selected service.
+    session.replace_history([])
+    clear_conversation(task_config_str, llm_name, request, language=dm_language)
+    return [], session, gr.update(value="", visible=False), gr.update(value="", visible=True)
 
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     """Update LLM choices based on task interface."""

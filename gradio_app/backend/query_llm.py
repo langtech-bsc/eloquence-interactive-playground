@@ -54,19 +54,16 @@ class LLMHandler:
         task_name = params.pop("task_name", None)
         session_id = params.pop("session_id", None)
         user_input = params.pop("user_input", None)
+        audio = deepcopy(params.pop("audio", None))
+        language = params.pop("language", None)
         cache_key = f"{task_name}::{llm_name}" if task_name else llm_name
-        llm = self._cache.get(cache_key, None)
-        audio = None
-        language = None
-        if "audio" in params:
-            audio = deepcopy(params["audio"])
-            del params["audio"]
-        if "language" in params:
-            language = params["language"]
-            del params["language"]
+        model_entry = self.available_llms.get(llm_name, {})
+        if self._resolve_interactor(llm_name, model_entry, task_name) == "dialogue_manager":
+            language = language or model_entry.get("default_language", "sr")
+            cache_key = f"{cache_key}::{language}"
+        llm = self._cache.get(cache_key)
         if llm is None:
-            # Inside get_llm_generator creates the model interactor based on the configuration
-            llm = self.get_llm_generator(llm_name, task_name=task_name)
+            llm = self.get_llm_generator(llm_name, task_name=task_name, language=language)
             self._cache[cache_key] = llm
         llm.set_params(**params)
 
@@ -107,13 +104,22 @@ class LLMHandler:
         configured = str(model_entry.get("interactor", "")).strip().lower()
         return configured
         
-    def get_llm_generator(self, model_name, task_name=None):
+    def get_llm_generator(self, model_name, task_name=None, language=None):
         if model_name not in self.available_llms:
             raise ValueError(f"Unknown LLM name: {model_name}")
 
         model_entry = self.available_llms[model_name]
         base_kwargs = self._base_interactor_kwargs(model_entry)
         interactor = self._resolve_interactor(model_name, model_entry, task_name=task_name)
+
+        if interactor == "dialogue_manager":
+            language = language or model_entry.get("default_language", "sr")
+            endpoints = model_entry.get("language_endpoints")
+            if endpoints is not None:
+                if language not in endpoints:
+                    raise ValueError(f"No dialogue-manager endpoint configured for language '{language}'.")
+                base_kwargs["api_endpoint"] = endpoints[language]
+            base_kwargs["language"] = language
 
         if interactor == "chatgpt":
             return ChatGptInteractor(

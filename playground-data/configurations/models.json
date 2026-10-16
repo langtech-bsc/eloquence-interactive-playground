@@ -125,6 +125,11 @@
         "display_name": "NurseLLM",
         "api_key": "",
         "api_endpoint": "http://127.0.0.1:8004",
+        "default_language": "sr",
+        "language_endpoints": {
+            "sr": "http://127.0.0.1:8004",
+            "en": "http://127.0.0.1:8005"
+        },
         "interface": "text"
     },
     {

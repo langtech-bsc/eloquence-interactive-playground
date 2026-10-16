@@ -51,6 +51,7 @@ from gradio_app.app_handlers import (
     llm_handler,
     load_task,
     update_llm_choices,
+    change_dm_language,
     update_rag_llm_choices,
     select_rag_text_model,
     select_rag_speech_model,
@@ -601,6 +602,15 @@ with gr.Blocks(
                             submit_btn = gr.Button("Submit", elem_id="submit_btn")
                             clear_btn = gr.Button("Clear", elem_id="clear_btn")
 
+                dm_language_dropdown = gr.Dropdown(
+                    label="Language",
+                    choices=[("English", "en"), ("Serbian", "sr")],
+                    value="sr",
+                    visible=False,
+                    interactive=True,
+                    elem_id="dm_language",
+                )
+
                 with gr.Row(elem_id="summary_controls_row"):
                     with gr.Column(scale=6, min_width=0):
                         summary_box = gr.Textbox(value="", label="Summary", lines=4, interactive=False, visible=False)
@@ -735,7 +745,7 @@ with gr.Blocks(
         None
     ).success(
         interact_with_attention,
-        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name, dm_language_dropdown],
         [chatbot, context_html, rag_column, input_textbox, conversation_session, summary_box, summary_html]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
@@ -747,7 +757,7 @@ with gr.Blocks(
         None
     ).success(
         interact_with_attention,
-        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name, dm_language_dropdown],
         [chatbot, context_html, rag_column, input_textbox, conversation_session, summary_box, summary_html]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
@@ -759,7 +769,7 @@ with gr.Blocks(
         None
     ).success(
         interact_with_attention,
-        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name],
+        [conversation_session, input_textbox, llm_name, docs_k, temp, top_p, max_tokens, index_name, system_prompt, task_config, language_dropdown, audio_qa_mode, text_llm_name, dm_language_dropdown],
         [chatbot, context_html, rag_column, input_textbox, conversation_session, summary_box, summary_html]
     ).then(
         lambda: gr.update(interactive=True), None, [input_textbox]
@@ -767,8 +777,13 @@ with gr.Blocks(
     
     clear_btn.click(
         clear_conversation_with_attention,
-        [task_config, llm_name, conversation_session],
+        [task_config, llm_name, conversation_session, dm_language_dropdown],
         [chatbot, system_prompt, prompt_radio, summary_box, rag_column, conversation_session, summary_html],
+    )
+    dm_language_dropdown.input(
+        change_dm_language,
+        [task_config, llm_name, conversation_session, dm_language_dropdown],
+        [chatbot, conversation_session, summary_box, summary_html],
     )
     summarize_btn.click(
         summarize_conversation,
@@ -793,6 +808,7 @@ with gr.Blocks(
             summary_box,
             text_llm_name,
             rag_params_accordion,
+            dm_language_dropdown,
         ]
     ).then(
         update_llm_choices,
