@@ -84,7 +84,7 @@ function installAttentionVisualization() {
             message.querySelectorAll(".attention-token").forEach((span) => {
                 const weight = indicesOf(span).reduce((sum, c) => sum + weights[c], 0);
                 const alpha = opacity(weight, maximum);
-                const color = alpha > 0.02 ? `rgba(255,190,40,${alpha.toFixed(3)})` : "";
+                const color = alpha > 0.02 ? `rgba(235,175,35,${alpha.toFixed(3)})` : "";
                 if (span.style.backgroundColor !== color) span.style.backgroundColor = color;
             });
         });
