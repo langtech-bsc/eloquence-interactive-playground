@@ -1,101 +1,154 @@
-Based on https://huggingface.co/spaces/akazakov/rag-gradio-sample-project/tree/main/gradio_app
+# ELOQUENCE Interactive Playground
 
-## NurseLLM: English and Serbian dialogue managers
+ELOQUENCE Interactive Playground is a Gradio application for testing text and
+audio language-model services through a single interface. It supports ordinary
+chat, retrieval-augmented generation (RAG), document ingestion, transcription,
+speaker diarization, audio question answering, specialised dialogue systems and
+conversation summaries with attention visualisation.
 
-Select **DM**, choose **NurseLLM**, and use **Language** below the conversation
-and above **Summary**. Serbian is the default. Changing language starts a fresh
-conversation and clears the summary. **Clear** resets the selected language's
-session; browser sessions stay separate.
+The playground does not normally load the conversational models itself. Models
+and specialised components run as external services and are registered in the
+application configuration. The playground coordinates requests, stores user
+workspaces and connects the selected task to the appropriate service.
 
-Configure both URLs in the single `NurseLLM` entry in
-`playground-data/configurations/models.json`:
+## Main features
 
-```json
-"default_language": "sr",
-"language_endpoints": {
-    "sr": "http://127.0.0.1:8004",
-    "en": "http://127.0.0.1:8005"
-}
+| Feature | Description |
+| --- | --- |
+| Basic LLM | Chat with any configured text model that is available to the playground. |
+| RAG | Retrieve relevant chunks from a selected vector index and include them as evidence for the model. |
+| Document ingestion | Create and update LanceDB indexes from supported documents or structured conversation chunks. |
+| Audio QA | Ask questions using audio, either with a speech-capable model or through transcription followed by a text model. |
+| Transcription | Transcribe uploaded or recorded audio with configured ASR services such as Whisper or MEUSLI. |
+| Diarization | Transcribe audio and separate speakers using a configured WhisperX service. |
+| SDialog | Use a specialised dialogue model through the same playground interface. |
+| Dialogue manager | Connect to task-specific dialogue managers, including the English and Serbian NurseLLM services. |
+| Summarisation | Generate a summary of a text conversation with the external Nemo attention service. |
+| Attention visualisation | Select text in a summary to highlight the related parts of the conversation. |
+| Speaker reconciliation | Reconcile speaker labels across separately ingested conversation chunks. |
+| Saved workspaces | Store prompts, conversation histories, feedback and retriever selections per user. |
+| HTTP API | Access the same task execution and ingestion workflows programmatically. |
+
+The Gradio task selector exposes the stable interactive tasks. Some additional
+task configurations may exist for API clients while they are still under
+development.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Client[Browser or API client] --> IP[ELOQUENCE Interactive Playground]
+
+    subgraph IPContainer[Playground container]
+        IP --> UI[Gradio UI]
+        IP --> API[FastAPI endpoints]
+        IP --> Retrieval[Retrieval server]
+        Retrieval --> LanceDB[(LanceDB)]
+    end
+
+    IP --> Models[Text and audio model services]
+    IP --> DM[Dialogue manager services]
+    IP --> Nemo[Nemo summarisation service]
+    IP --> Data[(Persistent data)]
 ```
 
-Both use `DialogueManagerInteractor`: Serbian calls `/v1/chat/uns_dm`, English
-calls `/v1/chat/uns_dm_eng`. Start the DM services and their NER/LLM backends
-separately. Summaries use the existing Nemo service.
+The main application is implemented with Gradio mounted on FastAPI. Browser
+interactions and HTTP API requests therefore use the same task handlers and model
+registry.
 
-Tests:
+The retrieval server manages document ingestion, embeddings and similarity
+search over LanceDB. It runs alongside the playground in the standard container
+setup. Conversational models, speech services, dialogue managers and the Nemo
+summarisation service run independently and are reached through their configured
+HTTP endpoints.
 
-```bash
-python -m unittest discover -s tests -p test_dialogue_manager_languages.py -v
-python -m unittest discover -s tests -p test_attention_summarization.py -v
+Persistent data is mounted at `/data` in the container. It contains the runtime
+configuration, vector indexes, user workspaces, feedback and speaker registries.
+
+## Configuration
+
+Runtime configuration lives under `playground-data/configurations/`:
+
+| Path | Purpose |
+| --- | --- |
+| `models.json` | Model and service names, interactors, endpoints, interfaces and optional credentials. |
+| `retrievers.json` | Available retrieval services. |
+| `indexes.json` | Known vector indexes and their embedding models. |
+| `prompts.json` | Shared saved prompts. |
+| `task_configs/` | Task definitions, required interfaces and whether retrieval is enabled. |
+
+General defaults and environment-backed settings are defined in `settings.py`.
+Model credentials should be supplied through environment variables or deployment
+secrets rather than committed to the repository.
+
+Each model entry declares an `interface`, such as `text`, `audio` or `service`,
+and an `interactor` that selects the client implementation. Gradio filters the
+available models according to the selected task and the services that are
+reachable.
+
+## Using the Gradio application
+
+The interface has three main tabs:
+
+### Playground
+
+1. Select a **Task configuration**.
+2. Select one of the compatible models shown for that task.
+3. For RAG, select the vector store, index and number of documents to retrieve.
+4. Optionally change the system prompt and generation parameters.
+5. Enter text, upload audio or record audio, depending on the selected task.
+6. Submit the request and continue the conversation from the same history.
+
+The configuration panel contains the system prompt, temperature, top-p,
+maximum output tokens and RAG top-k controls. Their visibility depends on the
+selected task. Prompts and conversation histories can be saved and restored from
+the same interface.
+
+The **Summarization** and **DM** tasks display a summary control. The summary is
+generated by the external Nemo service. Selecting a span in the rendered summary
+highlights the conversation tokens associated with that span by the returned
+attention data.
+
+### Ingestion
+
+The ingestion tab creates or extends a vector index. Select the target vector
+store, provide an index name, choose an embedding model, upload the documents and
+select a splitting strategy. Chunk length is used by length-based strategies;
+the percentile threshold is used by semantic splitting.
+
+### Feedback
+
+The feedback tab displays stored user feedback, supports filtering and allows the
+resulting data to be downloaded.
+
+## RAG and ingestion
+
+The RAG workflow has two stages:
+
+```text
+Document -> text extraction -> chunking -> embeddings -> LanceDB index
+Question -> query embedding -> similarity search -> selected chunks -> model
 ```
 
-## Summarization with Nemo attention
+The ingestion pipeline supports PDF, DOCX, CSV, TSV, HTML, Markdown, plain text
+and JSONL files. It provides simple, recursive and semantic splitting strategies.
+Each index records the embedding model used when it was created so that queries
+use the same representation.
 
-The **Summarization** and **DM** tasks both generate summaries with the separate
-Nemo attention service when clicking **Summarize conversation**. Conversation
-continues through the selected LLM or dialogue manager. Select text in **Summary**
-to highlight the corresponding tokens inside the conversation bubbles. Press ESC or click the conversation to clear the
-highlight. Attention is an interpretation, not a causal explanation.
+At query time, the retrieval server embeds the question, performs vector search
+and returns the most relevant chunks with their distances and metadata. The
+playground formats those chunks as evidence and sends them to the selected model.
+The answer can reference the retrieved documents, which are also returned by the
+API and shown by the interface where applicable.
 
-Start the attention service separately; IP does not start or download a model.
-The service is registered in `playground-data/configurations/models.json` with
-`model_name: "Mistral-Nemo-Instruct-2407"`, `display_name: "Nemo"`,
-`interactor: "attention_summarization"`,
-`api_endpoint: "http://127.0.0.1:5010/summarize_with_attention"` and
-`interface: "service"`. This keeps it out of the conversation model selector.
-The display name is the internal registry key; `interface: "service"` keeps
-this entry hidden from the conversation model selector. If a display name is
-omitted, the registry falls back to `model_name`.
-Change that entry to configure the endpoint. `ATTENTION_REQUEST_TIMEOUT`
-(default 300 seconds) sets the request timeout in the IP environment. The
-current Compose deployment uses host networking; with bridge networking, use an
-address reachable from the IP container. The interactor maps
-`Mistral-Nemo-Instruct-2407` (also accepting the full Hub ID) to the service
-alias `model=nemo`, reusing its bundled weights and
-preloaded model instead of loading another instance. Summarization uses
-`top_k=16`, retaining the strongest 16 entries per attention row, matching the
-standalone `/demo` default. This filters the visualization response without
-changing summary generation. In DM, summarizing does not end or reset the
-dialogue-manager session; **Clear conversation** still resets it.
+Structured conversation ingestion can append ordered chunks to an index. Speaker
+reconciliation uses previous chunk metadata to keep speaker identities consistent
+across independently processed audio segments.
 
-The button posts `operation: "summarize"` to the IP's existing form-encoded
-`/query`, which resolves the interactor from `models.json` and calls Nemo.
-Both `task_config: "Summarization"` and `task_config: "DM"` support this operation.
-The local IP port comes from `GRADIO_SERVER_PORT` (default 8080).
-API clients can use the same operation:
+## Wikipedia and MCP
 
-```bash
-curl -s http://127.0.0.1:8080/dev/query \
-  -F 'body={"operation":"summarize","task_config":"Summarization","llm_name":"Nemo","history":[["Tengo fiebre desde ayer.","¿Tienes otros síntomas?"]],"input_text":"","docs_k":0,"temp":0,"top_p":1,"max_tokens":150,"index_name":null}'
-```
-
-Adjust the IP host, port and path prefix to your deployment. `llm_name` is retained
-for API compatibility and does not select the summarizer. The response contains
-the summary in `text` and the sidecar payload in `summary_attention`, including
-token texts, character offsets, lengths, sparse COO attention and `message_spans`
-mapping prompt characters to conversation messages. Requests without `operation`
-continue to use the ordinary chat path.
-
-The browser computes highlighting locally with the demo's normalization and
-gamma (0.35). It never sends selection events to the model. Original conversation
-history is stored separately from rendered HTML. Summaries use the visible text of
-Markdown/HTML messages, while attention is inserted into their formatted text nodes
-so emphasis, code and safe links remain usable. Wait for the assistant to finish
-streaming before summarizing; results for a changed history are discarded.
-Attention is invalidated when the conversation, task, model or system prompt changes. Token metadata is
-validated before rendering: incompatible or misaligned sidecar responses produce
-an error instead of highlighting unrelated text.
-
-The attention service is used as-is. Its legacy token-by-token offsets can be
-invalid for accents or emojis. The IP recomputes character spans using the local
-Nemo tokenizer snapshot configured by `tokenizer_path` in the service entry.
-Only the tokenizer is included; no model weights are loaded by the IP. Every
-token piece and token count must match the service response before replacing
-offsets. Incompatible metadata is rejected rather than truncated or clamped.
-Rebuild/restart only the IP after its source changes; the sidecar needs no edits.
-  
-## About
-...
+Documentation for the Wikipedia and MCP integration will be added when the
+implementation is finalised.
 
 ## Deploy with docker compose
 
@@ -108,12 +161,13 @@ Make
 [Docker compose](https://docs.docker.com/compose/install/)
 
 ### Environment Variables
-To run this project, you will need to add the following environment variables to your .env file.
 
+To run this project, you will need to add the following environment variable to
+your `.env` file:
 
 `OPENAI_API_ENDPOINT_URL`
 
-Example .env file
+Example `.env` file:
 
 ```bash
 OPENAI_API_ENDPOINT_URL=http://172.17.0.1:8080/v1/completions
@@ -121,18 +175,20 @@ OPENAI_API_ENDPOINT_URL=http://172.17.0.1:8080/v1/completions
 
 ## Deployment (docker compose)
 
-To deploy run
+To deploy, run:
 
 ```bash
 make deploy
 ```
 
-To delete deployment run
+To delete the deployment, run:
+
 ```bash
 make undeploy
 ```
 
-To stop deployment run
+To stop the deployment, run:
+
 ```bash
 make stop
 ```
