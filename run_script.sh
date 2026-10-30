@@ -1,8 +1,5 @@
 python -m prep_scripts.prepare_users
 
-python -m dialogue_manager.dummy &
-sleep 5
-
 python -m retrievers.retrieval_server &
 sleep 5
 

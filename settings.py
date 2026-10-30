@@ -34,12 +34,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
     PERSISTENT_DATA_ROOT: str = os.environ.get("PERSISTENT_DATA", "/playground-data")
     LANCEDB_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/lancedb"
+    SPEAKER_REGISTRY_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/speaker_registries"
+    SPEAKER_RECONCILIATION_MODEL: str = "Gemma 4 31B"
     LANCEDB_TABLE_NAME: str = "table"
     VECTOR_COLUMN_NAME: str = "embedding"
     TEXT_COLUMN_NAME: str = "text"
     METADATA: str = "metadata"
     UPLOAD_DIR: str = "/tmp/uploads"
-    TOP_K_RERANK: int = 5
     SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt", "jsonl"]
     RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7997"
     ATTENTION_REQUEST_TIMEOUT: int = 300
