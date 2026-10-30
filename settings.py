@@ -39,7 +39,6 @@ class Settings(BaseSettings):
     TEXT_COLUMN_NAME: str = "text"
     METADATA: str = "metadata"
     UPLOAD_DIR: str = "/tmp/uploads"
-    TOP_K_RERANK: int = 5
     SUPPORTED_FILE_TYPES: list = ["pdf", "docx", "csv", "tsv", "html", "md", "txt", "jsonl"]
     RETRIEVER_ENDPOINT: str = "http://127.0.0.1:7997"
     ATTENTION_REQUEST_TIMEOUT: int = 300
