@@ -1,0 +1,8 @@
+{
+  "name": "Wiki",
+  "RAG": false,
+  "interface": "text",
+  "service": "local",
+  "llm_name": "Gemma + Tools",
+  "wikipedia_url": "http://127.0.0.1:8888/mcp/wikipedia"
+}

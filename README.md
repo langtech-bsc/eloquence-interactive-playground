@@ -147,8 +147,26 @@ across independently processed audio segments.
 
 ## Wikipedia and MCP
 
-Documentation for the Wikipedia and MCP integration will be added when the
-implementation is finalised.
+Wikipedia support is available through the `/query` API but is currently hidden
+from the Gradio task and model selectors. It provides two task configurations:
+
+- `Wiki` sends the conversation to the external agent configured as
+  `Gemma + Tools`. The agent decides whether to call Wikipedia and returns its
+  final answer.
+- `RAG_with_Wiki` retrieves local conversation chunks and runs a tool loop that
+  prioritises those chunks while using Wikipedia for complementary general
+  knowledge. Local and Wikipedia evidence remain explicitly separated.
+
+The integration uses an external agent endpoint on port `9084` and a Wikipedia
+MCP server on port `8888`. MCP exposes `search_wikipedia`, `get_summary` and
+`get_article`; the model selects a tool with `tool_choice=auto`. Both loops allow
+at most eight model calls and reserve the last call for a final answer without
+tools. The MCP server caches repeated requests and article content is capped
+before it is returned to the model. `RAG_with_Wiki` additionally turns temporary
+MCP failures into tool results so they do not abort the whole `/query` request.
+
+The agent and MCP services are deployed separately from this repository. Their
+URLs and model endpoints must be adapted to the target environment.
 
 ## Deploy with docker compose
 

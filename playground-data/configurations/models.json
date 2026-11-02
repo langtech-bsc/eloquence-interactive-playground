@@ -140,5 +140,13 @@
         "api_endpoint": "http://127.0.0.1:5010/summarize_with_attention",
         "tokenizer_path": "assets/tokenizers/nemo/tokenizer.json.gz",
         "interface": "service"
+    },
+    {
+        "model_name": "gemma-4-31B-it-UD-Q8_K_XL.gguf",
+        "interactor": "gemma",
+        "display_name": "Gemma + Tools",
+        "api_key": "local",
+        "api_endpoint": "http://127.0.0.1:9084/v1",
+        "interface": "text"
     }
 ]

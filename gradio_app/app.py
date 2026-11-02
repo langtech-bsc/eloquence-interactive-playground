@@ -223,12 +223,14 @@ def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], 
 
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
-    if kwargs["llm_name"] not in available_llms.keys():
-        return "", [], [], None, []  # Return empty text and documents for unknown LLM
-    
     _, task_configs_list = _get_task_configs()
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
     task_config = task_configs.get(kwargs.get("task_config"), settings.BASIC_CONFIG)
+    kwargs["llm_name"] = task_config.get("llm_name", kwargs["llm_name"])
+    if kwargs["llm_name"] not in available_llms:
+        if task_config.get("llm_name"):
+            raise ValueError(f"Unknown model: {kwargs['llm_name']}")
+        return "", [], [], None, []
     
     retriever_address = kwargs.get("retriever_address", settings.RETRIEVER_ENDPOINT)
     retriever_instance = RetrieverClient(endpoint=retriever_address)

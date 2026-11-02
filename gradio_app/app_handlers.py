@@ -106,7 +106,7 @@ def perform_ingest(
 
 def load_task(task_config):
     task_config = json.loads(task_config)
-    rag_enabled = task_config.get("name") == "RAG"
+    rag_enabled = task_config.get("name") in {"RAG", "RAG_with_Wiki"}
     show_summary = task_config.get("name") in {"Summarization", "DM"}
     audio_mode = task_config.get("audio_mode")
     interfaces = task_config.get("interface", "text")
@@ -794,14 +794,16 @@ def _get_task_configs():
     preferred_order = ["Basic LLM", "SDialog", "Summarization", "RAG", "DM", "Audio QA", "Transcription", "Diarization"]
     order_index = {name: idx for idx, name in enumerate(preferred_order)}
     configs.sort(key=lambda item: order_index.get(item[0], len(preferred_order)))
+    visible_configs = [item for item in configs if item[0] not in {"Wiki", "RAG_with_Wiki"}]
     default_value = None
-    for label, value in configs:
+    for label, value in visible_configs:
         if label == "Basic LLM":
             default_value = value
             break
-    if default_value is None and configs:
-        default_value = configs[0][1]
-    return gr.Radio(label="Task configuration", choices=configs, value=default_value), configs
+    if default_value is None and visible_configs:
+        default_value = visible_configs[0][1]
+    # /query uses the complete list; only Gradio choices are filtered.
+    return gr.Radio(label="Task configuration", choices=visible_configs, value=default_value), configs
 
 
 def _get_retrievers(user: str):
@@ -898,7 +900,7 @@ def _get_online_models(available_llms):
         return False
 
     choices = [(llm, llm) for llm in available_llms
-               if available_llms[llm].get("interface") != "service"]
+               if llm != "Gemma + Tools" and available_llms[llm].get("interface") != "service"]
     if probe_models:
         max_workers = min(8, max(1, len(choices)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -961,6 +963,11 @@ def change_dm_language(task_config_str, llm_name, session: ConversationSession,
 def update_llm_choices(task_config_str: str, audio_qa_mode: str | None = None) -> gr.update:
     """Update LLM choices based on task interface."""
     task_config = json.loads(task_config_str) if task_config_str else {}
+    if task_config.get("llm_name"):
+        model = task_config["llm_name"]
+        if model == "Gemma + Tools":
+            return gr.update(choices=[], value=None, visible=False)
+        return gr.update(choices=[model], value=model, visible=True)
     task_name = task_config.get("name")
     if task_name == "RAG" or (
         task_name == "Audio QA" and audio_qa_mode == "speech_llm"
@@ -1217,5 +1224,5 @@ def update_llm_params_visibility(task_config_str: str, audio_qa_mode: str | None
 
 def update_rag_params_visibility(task_config_str: str) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}
-    rag_enabled = task_config.get("name") == "RAG"
+    rag_enabled = task_config.get("name") in {"RAG", "RAG_with_Wiki"}
     return gr.update(visible=rag_enabled)

@@ -2,6 +2,8 @@ import os
 import json
 import requests
 from settings import settings
+from retrievers.diagnostics import log_retrieval
+import math
 
 class RetrieverClient:
     def __init__(self, endpoint):
@@ -53,7 +55,81 @@ class RetrieverClient:
         while len(metadata) < len(documents):
             metadata.append(None)
 
+        log_retrieval(
+            task="RAG",
+            index_name=index_name,
+            query=query,
+            documents=documents,
+            distances=payload.get("documents_distances"),
+        )
         return documents, metadata
+
+    def search_with_scores(self, index_name, query, top_k=5):
+        response = requests.get(
+            f"{self.endpoint.rstrip('/')}/search",
+            params={
+                "index_name": index_name,
+                "query": query,
+                "top_k": top_k,
+            },
+            timeout=120,
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+        documents = payload.get("documents")
+        distances = payload.get("documents_distances")
+        metadata = payload.get("documents_metadata", [])
+
+        if not isinstance(documents, list):
+            raise RuntimeError("Retriever returned invalid documents.")
+
+        if not isinstance(distances, list):
+            raise RuntimeError(
+                "Retriever did not return documents_distances. "
+                "Ensure the updated retrieval service is running."
+            )
+
+        if len(documents) != len(distances):
+            raise RuntimeError(
+                "Retriever returned different numbers of documents and distances."
+            )
+
+        if not isinstance(metadata, list):
+            raise RuntimeError("Retriever returned invalid metadata.")
+
+        chunks = []
+        for position, (text, distance) in enumerate(
+            zip(documents, distances)
+        ):
+            if not isinstance(text, str):
+                raise RuntimeError("Retriever returned a non-text document.")
+
+            if (
+                isinstance(distance, bool)
+                or not isinstance(distance, (int, float))
+                or not math.isfinite(distance)
+            ):
+                raise RuntimeError(
+                    f"Retriever returned an invalid distance at position {position}."
+                )
+
+            item_metadata = (
+                metadata[position] if position < len(metadata) else None
+            )
+            if isinstance(item_metadata, str):
+                try:
+                    item_metadata = json.loads(item_metadata)
+                except json.JSONDecodeError:
+                    item_metadata = {"raw": item_metadata}
+
+            chunks.append({
+                "text": text,
+                "metadata": item_metadata,
+                "distance": float(distance),
+            })
+
+        return chunks
     
     def add(self, text, metadata, index_name):
         params = {

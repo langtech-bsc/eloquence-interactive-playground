@@ -18,6 +18,7 @@ retriever = LanceDBRetriever(vector_store, threshold=None)
 class SearchResult(BaseModel):
     documents: List[str]
     documents_metadata: List[Any] = Field(default_factory=list)
+    documents_distances: List[float | None] = Field(default_factory=list)
 
 
 @app.get("/list_indices")
@@ -40,14 +41,21 @@ async def search_item(index_name: str, query: str, top_k: int = 5):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     documents = []
     documents_metadata = []
+    documents_distances = []
     for result in results:
         if isinstance(result, dict):
             documents.append(result.get("text", ""))
             documents_metadata.append(result.get("metadata"))
+            documents_distances.append(result.get("distance"))
         else:
             documents.append(str(result))
             documents_metadata.append(None)
-    response = SearchResult(documents=documents, documents_metadata=documents_metadata)
+            documents_distances.append(None)
+    response = SearchResult(
+        documents=documents,
+        documents_metadata=documents_metadata,
+        documents_distances=documents_distances,
+    )
     return response
 
 

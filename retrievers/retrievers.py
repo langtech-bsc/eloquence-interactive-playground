@@ -89,6 +89,7 @@ class LanceDBRetriever:
             {
                 "text": document[settings.TEXT_COLUMN_NAME],
                 "metadata": document.get(settings.METADATA),
+                "distance": float(document["_distance"]),
             }
             for document in documents
         ]
