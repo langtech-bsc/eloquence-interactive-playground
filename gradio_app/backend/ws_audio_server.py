@@ -77,4 +77,4 @@ async def respond(request: Request):
     )
 
 if __name__ == "__main__":
-    uvicorn.run("gradio_app.backend.ws_audio_server:app", host="0.0.0.0", port=8081, reload=True)
+    uvicorn.run("gradio_app.backend.ws_audio_server:app", host="0.0.0.0", port=8083, reload=True)

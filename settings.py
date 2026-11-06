@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
     PERSISTENT_DATA_ROOT: str = os.environ.get("PERSISTENT_DATA", "/playground-data")
     LANCEDB_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/lancedb"
+    SPEAKER_REGISTRY_DIRECTORY: str = f"{PERSISTENT_DATA_ROOT}/speaker_registries"
+    SPEAKER_RECONCILIATION_MODEL: str = "Gemma 4 31B"
     LANCEDB_TABLE_NAME: str = "table"
     VECTOR_COLUMN_NAME: str = "embedding"
     TEXT_COLUMN_NAME: str = "text"

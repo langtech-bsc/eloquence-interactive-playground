@@ -1,4 +1,58 @@
 {
-    "Conversation1": "sentence-transformers/all-MiniLM-L6-v2",
-    "Conversation2": "sentence-transformers/all-MiniLM-L6-v2"
+    "vacas": "sentence-transformers/all-MiniLM-L6-v2",
+    "viajes": "sentence-transformers/all-MiniLM-L6-v2",
+    "ENpodcast": "sentence-transformers/all-MiniLM-L6-v2",
+    "WP5": "sentence-transformers/all-MiniLM-L6-v2",
+    "pocdast": "sentence-transformers/all-MiniLM-L6-v2",
+    "hola_15_06_2026_12_49_647600dd": "sentence-transformers/all-MiniLM-L6-v2",
+    "podcast_15_06_2026_13_53_56647fc6": "sentence-transformers/all-MiniLM-L6-v2",
+    "h_15_06_2026_16_37_79e255ed": "sentence-transformers/all-MiniLM-L6-v2",
+    "i_15_06_2026_16_40_9f654ca1": "sentence-transformers/all-MiniLM-L6-v2",
+    "podcast_15_06_2026_16_47_e96f16b1": "sentence-transformers/all-MiniLM-L6-v2",
+    "k_15_06_2026_16_59_0e1d8244": "sentence-transformers/all-MiniLM-L6-v2",
+    "Conversation_1": "sentence-transformers/all-MiniLM-L6-v2",
+    "Conversation_2": "sentence-transformers/all-MiniLM-L6-v2",
+    "Conversation_3": "sentence-transformers/all-MiniLM-L6-v2",
+    "a_20_07_2026_15_04_4b6eae21": "sentence-transformers/all-MiniLM-L6-v2",
+    "paper": {
+        "version": 2,
+        "profiles": {
+            "text": {
+                "table": "paper__text",
+                "embedder": "sentence-transformers/all-MiniLM-L6-v2"
+            }
+        }
+    },
+    "Paper": {
+        "version": 2,
+        "profiles": {
+            "text": {
+                "table": "Paper__text",
+                "embedder": "sentence-transformers/all-MiniLM-L6-v2"
+            }
+        }
+    },
+    "j_03_08_2026_15_26_d338ec9c": "sentence-transformers/all-MiniLM-L6-v2",
+    "k_03_08_2026_15_32_5c2e415f": "sentence-transformers/all-MiniLM-L6-v2",
+    "k_03_08_2026_15_38_d2e4d2c2": "sentence-transformers/all-MiniLM-L6-v2",
+    "j_03_08_2026_15_49_fb0f06c7": "sentence-transformers/all-MiniLM-L6-v2",
+    "h_03_08_2026_17_04_e27e2fac": "sentence-transformers/all-MiniLM-L6-v2",
+    "j_03_08_2026_17_07_11477425": "sentence-transformers/all-MiniLM-L6-v2",
+    "h_03_08_2026_17_12_bcc33206": "sentence-transformers/all-MiniLM-L6-v2",
+    "k_03_08_2026_17_29_15a4a301": "sentence-transformers/all-MiniLM-L6-v2",
+    "j_03_08_2026_17_38_a48127c3": "sentence-transformers/all-MiniLM-L6-v2",
+    "prova": "BAAI/bge-m3",
+    "holiday_14_09_2026_11_35_8c77f22d": "sentence-transformers/all-MiniLM-L6-v2",
+    "EloqConv_00": "BAAI/bge-m3",
+    "EloqConv_01": "BAAI/bge-m3",
+    "EloqConv_02": "BAAI/bge-m3",
+    "EloqConv_03": "BAAI/bge-m3",
+    "EloqConv_04": "BAAI/bge-m3",
+    "podcsst_20_09_2026_08_33_1aba17ac": "sentence-transformers/all-MiniLM-L6-v2",
+    "italia_21_09_2026_10_23_d90dddf6": "sentence-transformers/all-MiniLM-L6-v2",
+    "italia2_21_09_2026_10_50_7d18366f": "sentence-transformers/all-MiniLM-L6-v2",
+    "Prova": "sentence-transformers/all-MiniLM-L6-v2",
+    "aleix_04_11_2026_18_04_73893b42": "sentence-transformers/all-MiniLM-L6-v2",
+    "kkk_04_11_2026_23_42_9799af1c": "sentence-transformers/all-MiniLM-L6-v2",
+    "gerardomartajorge_04_11_2026_23_46_17405bbd": "sentence-transformers/all-MiniLM-L6-v2"
 }

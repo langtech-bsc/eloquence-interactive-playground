@@ -144,10 +144,20 @@ class LanceDBRetriever:
                 return
             first_turn = current_turns[0]
             last_turn = current_turns[-1]
+            speakers = []
+            for turn in current_turns:
+                speaker = {
+                    "speaker_id": turn.get("speaker_id"),
+                    "speaker_name": turn.get("speaker_name"),
+                    "speaker": turn.get("speaker"),
+                }
+                if speaker["speaker"] and speaker not in speakers:
+                    speakers.append(speaker)
             snippet_metadata = {
                 "start_time": first_turn.get("start_time"),
                 "end_time": last_turn.get("end_time"),
                 "turn_count": len(current_turns),
+                "speakers": speakers,
             }
             if source_metadata is not None:
                 snippet_metadata["source_metadata"] = source_metadata
