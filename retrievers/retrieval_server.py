@@ -20,6 +20,7 @@ class SearchResult(BaseModel):
     documents_metadata: List[Any] = Field(default_factory=list)
     documents_distances: List[float | None] = Field(default_factory=list)
 
+
 @app.get("/list_indices")
 async def list_indices():
     retriever._load_index_config()
@@ -41,7 +42,6 @@ async def search_item(index_name: str, query: str, top_k: int = 5):
     documents = []
     documents_metadata = []
     documents_distances = []
-
     for result in results:
         if isinstance(result, dict):
             documents.append(result.get("text", ""))
@@ -51,7 +51,11 @@ async def search_item(index_name: str, query: str, top_k: int = 5):
             documents.append(str(result))
             documents_metadata.append(None)
             documents_distances.append(None)
-    response = SearchResult(documents=documents, documents_metadata=documents_metadata, documents_distances=documents_distances)
+    response = SearchResult(
+        documents=documents,
+        documents_metadata=documents_metadata,
+        documents_distances=documents_distances,
+    )
     return response
 
 

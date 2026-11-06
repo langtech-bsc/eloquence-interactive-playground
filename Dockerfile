@@ -17,7 +17,6 @@ COPY vendor/eloquence_orchestrator-0.1.0-py3-none-any.whl /opt/wheels/
 RUN pip install --no-cache-dir -c requirements.txt /opt/wheels/eloquence_orchestrator-0.1.0-py3-none-any.whl
 RUN python -c "from eloquence_orchestrator.orchestrator import build_graph_ip; from eloquence_orchestrator.mcp_tools import call_mcp_tool"
 RUN python -c "import gradio; from huggingface_hub import HfFolder; from FlagEmbedding import FlagReranker"
-
 COPY . .
 
 EXPOSE 8080          
@@ -29,3 +28,4 @@ ENV PERSISTENT_DATA="/data"
 ENV RETRIEVER_ENDPOINT="http://0.0.0.0:7997"
 
 CMD ["bash", "run_script.sh"]
+

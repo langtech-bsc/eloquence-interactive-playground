@@ -9,5 +9,6 @@ services:
     environment:
       - OPENAI_API_ENDPOINT_URL=${OPENAI_API_ENDPOINT_URL}
       - ROOT_PATH=/dev
+      - ELOQ_PROBE_MODELS_ON_LOAD=false
     volumes:
       - ./playground-data:/data:rw
