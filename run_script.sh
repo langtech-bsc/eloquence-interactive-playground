@@ -3,5 +3,5 @@ python -m prep_scripts.prepare_users
 python -m retrievers.retrieval_server &
 sleep 5
 
-export GRADIO_SERVER_PORT=8080;
+export GRADIO_SERVER_PORT=8082;
 python -m gradio_app.app

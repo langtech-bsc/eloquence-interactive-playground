@@ -147,8 +147,83 @@ across independently processed audio segments.
 
 ## Wikipedia and MCP
 
-Documentation for the Wikipedia and MCP integration will be added when the
-implementation is finalised.
+The playground provides two API-only Wikipedia tasks. They are intentionally
+hidden from the Gradio task and model selectors while the integration is being
+validated:
+
+| Task | Behaviour |
+| --- | --- |
+| `Wiki` | Sends the conversation to the external agent configured as `Gemma + Tools`. The agent decides whether to call Wikipedia and returns its final answer. |
+| `RAG_with_Wiki` | Retrieves local chunks first, then runs a model/tool loop that can call Wikipedia. Local chunks take precedence for conversation-specific facts; Wikipedia supplies complementary general knowledge. |
+
+The integration uses MCP (Model Context Protocol) over HTTP to discover and call
+`search_wikipedia`, `get_summary` and `get_article`. The model chooses whether
+and which tool to call. Tool failures are returned to the loop so that the model
+can answer from the available evidence and report that Wikipedia was unavailable.
+Repeated calls are cached within one request, and the final allowed model call
+is made without tools to force a final answer.
+
+### Required services
+
+Wikipedia support requires three processes to be reachable from the playground:
+
+1. The text-generation endpoint used by Gemma (the default agent configuration
+   expects `http://127.0.0.1:10009/v1/chat/completions`).
+2. A Wikipedia MCP server at
+   `http://127.0.0.1:8888/mcp/wikipedia`.
+3. For the `Wiki` task, the agent from `langgraph-orchestrator` at
+   `http://127.0.0.1:9084/v1`.
+
+Start the Spanish Wikipedia MCP server with:
+
+```bash
+FASTMCP_STATELESS_HTTP=true FASTMCP_JSON_RESPONSE=true \
+uvx --python 3.10 --with 'fastmcp==2.14.7' wikipedia-mcp==2.0.1 \
+  --transport http --host 127.0.0.1 --port 8888 \
+  --path /mcp/wikipedia --language es --enable-cache
+```
+
+Then start the external agent from the `langgraph-orchestrator` repository:
+
+```bash
+cd /path/to/langgraph-orchestrator
+LLAMA_URL_DIRECT=http://127.0.0.1:10009/v1/chat/completions \
+MODEL_NAME=gemma-4-31B-it-UD-Q8_K_XL.gguf \
+MCP_BASE=http://127.0.0.1:8888 AGENT_PORT=9084 \
+MAX_MODEL_CALLS=8 bash serve_wiki.sh
+```
+
+The relevant playground settings are:
+
+- `playground-data/configurations/models.json`: the `Gemma + Tools` model and
+  agent API base URL.
+- `playground-data/configurations/task_configs/wiki.json`: `Wiki` routing.
+- `playground-data/configurations/task_configs/rag_with_wiki.json`: MCP URL,
+  retrieval and model-call limit for `RAG_with_Wiki`.
+
+The Docker setup uses host networking because these defaults refer to
+`127.0.0.1` services on the host. The orchestrator library needed by
+`RAG_with_Wiki` is installed in the image from the wheel under `vendor/`; rebuild
+the image after replacing that wheel.
+
+### Test through `/query`
+
+With the services and playground running, test either task without opening the
+interactive UI:
+
+```bash
+python test_RAG_with_Wiki.py \
+  --task Wiki \
+  --query "¿Quién escribió Don Quijote?"
+
+python test_RAG_with_Wiki.py \
+  --task RAG_with_Wiki \
+  --index Conversation1 \
+  --query "¿Quién escribió Don Quijote?"
+```
+
+The test client defaults to the playground at `http://127.0.0.1:8082/query`.
+Use `--url`, `--model`, `--retriever` or `--index` when the deployment differs.
 
 ## Deploy with docker compose
 

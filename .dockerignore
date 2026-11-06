@@ -5,3 +5,6 @@ README.md
 Dockerfile
 Makefile
 docker-compose.yml
+playground-data/*
+!playground-data/configurations
+!playground-data/configurations/**

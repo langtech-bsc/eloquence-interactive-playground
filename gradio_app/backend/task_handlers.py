@@ -1,5 +1,10 @@
 import requests
+
 from gradio_app.helpers import check_llm_interface
+from gradio_app.backend.rag_with_wiki import (
+    retrieve_chunks,
+    answer_with_wikipedia,
+)
 
 def get_task_handler(config, llm, retriver):
     if "local" in config["service"]:
@@ -16,6 +21,7 @@ class LocalTaskHandler:
         
     def __call__(self, llm_name, system_prompt, history, query, docs_k, index_name, **params):
         retrieval_query = params.pop("retrieval_query", None) or query
+        llm_name = self.task_config.get("llm_name", llm_name)
 
         if not check_llm_interface(llm_name, self.task_config["interface"], available_llms=self.llm_handler.available_llms):
             raise ValueError(f"LLM {llm_name} does not support the required interface {self.task_config['interface']}.")
@@ -38,14 +44,57 @@ class LocalTaskHandler:
                     raise ValueError(f"Task {self.task_config.get('name', 'Audio QA')} does not support Whisper or WhisperX.")
                 if audio_mode == "diarization":
                     params["diarize"] = True
+
         documents = []
         documents_metadata = []
-        if self.task_config["RAG"]:
+
+        task_name = self.task_config.get("name")
+        if task_name == "Wiki" and params.get("audio") is not None:
+            raise ValueError("Wiki currently accepts text input.")
+
+        if task_name == "RAG_with_Wiki":
+            if not self.task_config.get("RAG"):
+                raise ValueError("RAG_with_Wiki requires retrieval enabled.")
+
+            if not check_llm_interface(
+                llm_name,
+                "text",
+                available_llms=self.llm_handler.available_llms,
+            ):
+                raise ValueError(f"{task_name} requires a text model.")
+
+            if params.get("audio") is not None:
+                raise ValueError(f"{task_name} currently accepts text input.")
+
+            chunks = retrieve_chunks(
+                retriever=self.retriever,
+                index_name=index_name,
+                query=retrieval_query,
+                top_k=docs_k,
+            )
+
+            documents = [chunk["text"] for chunk in chunks]
+            documents_metadata = [chunk["metadata"] for chunk in chunks]
+
+            answer = answer_with_wikipedia(
+                model_config=self.llm_handler.available_llms[llm_name],
+                system_prompt=system_prompt,
+                history=history,
+                documents=documents,
+                task_config=self.task_config,
+                **params,
+            )
+            yield answer, documents, documents_metadata
+            return
+
+        elif self.task_config["RAG"]:
             if hasattr(self.retriever, "search_with_metadata"):
-                documents, documents_metadata = self.retriever.search_with_metadata(
-                    index_name,
-                    retrieval_query,
-                    docs_k,
+                documents, documents_metadata = (
+                    self.retriever.search_with_metadata(
+                        index_name,
+                        retrieval_query,
+                        docs_k,
+                    )
                 )
             else:
                 documents = self.retriever.search(
@@ -53,7 +102,7 @@ class LocalTaskHandler:
                     retrieval_query,
                     docs_k,
                 )
-        # Retrieved RAG snippets reach the LLM here
+        # Wiki uses the configured agent endpoint through the normal model client.
         llm_response = self.llm_handler(
             llm_name,
             system_prompt,

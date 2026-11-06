@@ -18,6 +18,10 @@ from starlette.concurrency import run_in_threadpool
 from gradio_app.helpers import  extract_docs_from_rendered_template
 from gradio_app.messages import *
 from gradio_app.backend.attention_summarization import ConversationSession, summarize_with_attention
+from gradio_app.backend.speaker_reconciliation import (
+    SpeakerReconciler,
+    SpeakerRegistryStore,
+)
 from retrievers.client import RetrieverClient
 from settings import settings, normalize_path_prefix
 from gradio_app.app_handlers import (
@@ -64,6 +68,29 @@ from gradio_app.app_handlers import (
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+speaker_reconciler = SpeakerReconciler()
+speaker_registry_store = SpeakerRegistryStore(settings.SPEAKER_REGISTRY_DIRECTORY)
+
+
+def _generate_speaker_mapping(prompt: str) -> str:
+    model_name = settings.SPEAKER_RECONCILIATION_MODEL
+    if model_name not in llm_handler.available_llms:
+        raise ValueError(
+            f"Speaker-reconciliation model '{model_name}' is not configured."
+        )
+    response = llm_handler(
+        model_name,
+        "",
+        [[prompt, ""]],
+        [],
+        task_name="Speaker Reconciliation",
+        temperature=0.0,
+        top_p=1.0,
+        max_tokens=512,
+    )
+    if not isinstance(response, str):
+        raise ValueError("Speaker-reconciliation model must return one JSON string.")
+    return response
 
 
 class SubpathMiddleware:
@@ -165,6 +192,10 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 app.add_middleware(SubpathMiddleware, settings=settings)
 
 
+MIN_TURN_MERGE_GAP_SECONDS = -0.2
+MAX_TURN_MERGE_GAP_SECONDS = 1.0
+
+
 def _to_float(value, default=None):
     try:
         if value is None:
@@ -197,11 +228,19 @@ def _build_transcription_metadata(transcription_payload: Optional[Dict[str, Any]
 
 
 def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], chunk_start_seconds: float) -> List[Dict[str, Any]]:
+    """Build chunk-local speaker turns from WhisperX segments.
+
+    WhisperX can return several consecutive segments for one speaker. Their
+    text is joined only when the speaker is known and the timestamp gap is
+    small. Missing speaker labels, invalid timestamps, long pauses and large
+    timestamp overlaps start a new turn instead of risking a false merge.
+    """
     if not transcription_payload:
         return []
 
     turns = []
-    for segment in transcription_payload.get("segments") or []:
+    last_turn_has_valid_timestamps = False
+    for segment_index, segment in enumerate(transcription_payload.get("segments") or []):
         if not isinstance(segment, dict):
             continue
 
@@ -209,26 +248,74 @@ def _build_transcription_turns(transcription_payload: Optional[Dict[str, Any]], 
         if not text:
             continue
 
-        local_start = _to_float(segment.get("start"), 0.0)
-        local_end = _to_float(segment.get("end"), local_start)
-        turns.append({
-            "speaker": segment.get("speaker"),
+        parsed_local_start = _to_float(segment.get("start"))
+        parsed_local_end = _to_float(segment.get("end"))
+        has_valid_timestamps = (
+            parsed_local_start is not None
+            and parsed_local_end is not None
+            and parsed_local_end >= parsed_local_start
+        )
+        local_start = parsed_local_start if parsed_local_start is not None else 0.0
+        local_end = parsed_local_end if parsed_local_end is not None else local_start
+        raw_speaker = segment.get("speaker")
+        speaker = str(raw_speaker).strip() if raw_speaker is not None else None
+        if not speaker:
+            speaker = None
+
+        start_time = chunk_start_seconds + local_start
+        end_time = chunk_start_seconds + local_end
+        component = {
+            "segment_index": segment_index,
+            "speaker": speaker,
             "text": text,
-            "start_time": chunk_start_seconds + local_start,
-            "end_time": chunk_start_seconds + local_end,
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+
+        gap_seconds = (
+            start_time - turns[-1]["end_time"]
+            if turns and last_turn_has_valid_timestamps and has_valid_timestamps
+            else None
+        )
+        should_merge = (
+            turns
+            and speaker is not None
+            and turns[-1]["speaker"] == speaker
+            and gap_seconds is not None
+            and MIN_TURN_MERGE_GAP_SECONDS
+            <= gap_seconds
+            <= MAX_TURN_MERGE_GAP_SECONDS
+        )
+
+        if should_merge:
+            turns[-1]["text"] = f'{turns[-1]["text"]} {text}'
+            turns[-1]["end_time"] = end_time
+            turns[-1]["segments"].append(component)
+            last_turn_has_valid_timestamps = True
+            continue
+
+        turns.append({
+            "speaker": speaker,
+            "text": text,
+            "start_time": start_time,
+            "end_time": end_time,
+            "segments": [component],
         })
+        last_turn_has_valid_timestamps = has_valid_timestamps
 
     return turns
 
 
 async def query_llm_general(available_llms, audio_file=None, **kwargs):
     """General purpose LLM query handler for the API."""
-    if kwargs["llm_name"] not in available_llms.keys():
-        return "", [], [], None, []  # Return empty text and documents for unknown LLM
-    
     _, task_configs_list = _get_task_configs()
     task_configs = {k: json.loads(v) for k, v in task_configs_list}
     task_config = task_configs.get(kwargs.get("task_config"), settings.BASIC_CONFIG)
+    kwargs["llm_name"] = task_config.get("llm_name", kwargs["llm_name"])
+    if kwargs["llm_name"] not in available_llms:
+        if task_config.get("llm_name"):
+            raise ValueError(f"Unknown model: {kwargs['llm_name']}")
+        return "", [], [], None, []
     
     retriever_address = kwargs.get("retriever_address", settings.RETRIEVER_ENDPOINT)
     retriever_instance = RetrieverClient(endpoint=retriever_address)
@@ -436,19 +523,86 @@ async def ingest_endpoint(content_file: UploadFile, body: str = Form(...)):
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix) as tmp:
             shutil.copyfileobj(content_file.file, tmp.file)
             temp_file_path = tmp.name
-        # Call the same ingestion logic used by the UI
-        perform_ingest(
-            index_name=request.index_name,
-            chunk_size=request.chunk_size,
-            percentile=request.percentile,
-            embed_name=request.embed_name,
-            file_paths=[temp_file_path],
-            splitting_strategy=request.splitting_strategy,
-            retriever_address=request.retriever_address,
-            append=request.append,
-            snippet_metadata=request.snippet_metadata,
-            snippet_turns=request.snippet_turns,
-        )
+        ingest_arguments = {
+            "index_name": request.index_name,
+            "chunk_size": request.chunk_size,
+            "percentile": request.percentile,
+            "embed_name": request.embed_name,
+            "file_paths": [temp_file_path],
+            "splitting_strategy": request.splitting_strategy,
+            "retriever_address": request.retriever_address,
+            "append": request.append,
+            "snippet_metadata": request.snippet_metadata,
+        }
+
+        if request.snippet_turns is None:
+            perform_ingest(
+                **ingest_arguments,
+                snippet_turns=None,
+            )
+        else:
+            if request.chunk_index is None:
+                raise ValueError(
+                    "chunk_index is required for structured conversation ingestion."
+                )
+            structured_metadata = dict(request.snippet_metadata or {})
+            structured_metadata["chunk_index"] = request.chunk_index
+            ingest_arguments["snippet_metadata"] = structured_metadata
+            with speaker_registry_store.lock(request.index_name):
+                try:
+                    existing_registry = speaker_registry_store.load(
+                        request.index_name
+                    )
+                except ValueError:
+                    existing_registry = None
+
+                # A retry can arrive after the chunk was committed but before
+                # its successful HTTP response reached the Android client.
+                # Acknowledge that retry without ingesting duplicate vectors.
+                if (
+                    existing_registry is not None
+                    and existing_registry.get("last_chunk_index", -1)
+                    == request.chunk_index
+                ):
+                    logger.info(
+                        "Conversation chunk %s for index '%s' was already "
+                        "processed; acknowledging the retry.",
+                        request.chunk_index,
+                        request.index_name,
+                    )
+                    return ResponseIngest(
+                        status="success",
+                        msg="Chunk already ingested successfully.",
+                    )
+
+                registry = (
+                    None
+                    if request.chunk_index == 0
+                    else existing_registry
+                )
+                reconciled_turns, updated_registry = speaker_reconciler.prepare(
+                    index_name=request.index_name,
+                    chunk_index=request.chunk_index,
+                    append=request.append,
+                    turns=request.snippet_turns,
+                    registry=registry,
+                    generate_mapping=_generate_speaker_mapping,
+                )
+                logger.info(
+                    "Reconciled conversation chunk %s for index '%s' into %s "
+                    "canonical speaker(s).",
+                    request.chunk_index,
+                    request.index_name,
+                    len(updated_registry["speakers"]),
+                )
+                perform_ingest(
+                    **ingest_arguments,
+                    snippet_turns=reconciled_turns,
+                )
+                speaker_registry_store.save(
+                    request.index_name,
+                    updated_registry,
+                )
         return ResponseIngest(status="success", msg="Document ingested successfully.")
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
@@ -478,7 +632,9 @@ async def delete_vector_store(index_name: str, retriever_address: str = "public"
         retriever_address = settings.RETRIEVER_ENDPOINT
     retriever = RetrieverClient(endpoint=retriever_address)
     try:
-        retriever.delete_vs(index_name=index_name)
+        with speaker_registry_store.lock(index_name):
+            retriever.delete_vs(index_name=index_name)
+            speaker_registry_store.delete(index_name)
         return ResponseIngest(status="success", msg=f"Index '{index_name}' deleted successfully.")
     except Exception as exc:
         logger.error(f"Delete failed for index '{index_name}': {exc}")

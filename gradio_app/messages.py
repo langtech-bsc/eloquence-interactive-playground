@@ -100,6 +100,7 @@ class RequestIngest(BaseModel):
     append: Optional[bool] = False
     snippet_metadata: Optional[Dict[str, Any]] = None
     snippet_turns: Optional[List[Dict[str, Any]]] = None
+    chunk_index: Optional[int] = None
 
 
 class ResponseQueryLLM(BaseModel):
