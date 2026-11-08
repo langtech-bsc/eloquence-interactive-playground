@@ -115,7 +115,7 @@ class SpeakerReconcilerTests(unittest.TestCase):
         self.assertEqual(reconciled[1]["speaker"], "Mary [Speaker 2]")
         self.assertEqual(reconciled[1]["start_time"], 1.1)
 
-    def test_rejects_low_confidence_semantic_split(self):
+    def test_invalid_semantic_split_falls_back_to_original_turn(self):
         merged = turn(
             "Speaker 0",
             [
@@ -124,23 +124,26 @@ class SpeakerReconcilerTests(unittest.TestCase):
             ],
         )
 
-        with self.assertRaisesRegex(ValueError, "at least 0.90"):
-            self.reconciler.prepare(
-                index_name="conversation",
-                chunk_index=0,
-                append=False,
-                turns=[merged],
-                registry=None,
-                generate_mapping=lambda _: json.dumps({
-                    "splits": [{
-                        "turn_index": 0,
-                        "after_segment_index": 0,
-                        "next_speaker": "Corrected 1",
-                        "confidence": 0.70,
-                    }],
-                    "mappings": [mapping("Speaker 0"), mapping("Corrected 1")],
-                }),
-            )
+        reconciled, registry = self.reconciler.prepare(
+            index_name="conversation",
+            chunk_index=0,
+            append=False,
+            turns=[merged],
+            registry=None,
+            generate_mapping=lambda _: json.dumps({
+                "splits": [{
+                    "turn_index": 0,
+                    "after_segment_index": 0,
+                    "next_speaker": "Corrected 1",
+                    "confidence": 0.70,
+                }],
+                "mappings": [mapping("Speaker 0"), mapping("Corrected 1")],
+            }),
+        )
+
+        self.assertEqual(len(reconciled), 1)
+        self.assertEqual(reconciled[0]["text"], "Question? Answer.")
+        self.assertEqual(registry["last_chunk_index"], 0)
 
     def test_ignores_split_outside_preserved_boundary(self):
         merged = turn(
@@ -215,19 +218,49 @@ class SpeakerReconcilerTests(unittest.TestCase):
         self.assertEqual(reconciled[0]["speaker_id"], "Speaker 3")
         self.assertIn("Speaker 3", updated["speakers"])
 
-    def test_rejects_non_json_model_response(self):
-        with self.assertRaisesRegex(ValueError, "invalid JSON"):
-            self.reconciler.prepare(
-                index_name="conversation",
-                chunk_index=0,
-                append=False,
-                turns=[turn(
-                    "Speaker 0",
-                    [segment(0, "Speaker 0", "Hello.", 0.0, 1.0)],
-                )],
-                registry=None,
-                generate_mapping=lambda _: "```json\n{}\n```",
-            )
+    def test_multiple_local_speakers_can_share_canonical_speaker(self):
+        _, registry = self.prepare_first_chunk()
+        current = [
+            turn("Speaker 0", [segment(2, "Speaker 0", "First.", 30.0, 31.0)]),
+            turn("Speaker 2", [segment(3, "Speaker 2", "Second.", 31.1, 32.0)]),
+        ]
+
+        reconciled, _ = self.reconciler.prepare(
+            index_name="conversation",
+            chunk_index=1,
+            append=True,
+            turns=current,
+            registry=registry,
+            generate_mapping=lambda _: json.dumps({
+                "splits": [],
+                "mappings": [
+                    mapping("Speaker 0", "Speaker 1", 0.96),
+                    mapping("Speaker 2", "Speaker 1", 0.94),
+                ],
+            }),
+        )
+
+        self.assertEqual(
+            [item["speaker_id"] for item in reconciled],
+            ["Speaker 1", "Speaker 1"],
+        )
+
+    def test_invalid_model_response_falls_back_to_original_turns(self):
+        reconciled, registry = self.reconciler.prepare(
+            index_name="conversation",
+            chunk_index=0,
+            append=False,
+            turns=[turn(
+                "Speaker 0",
+                [segment(0, "Speaker 0", "Hello.", 0.0, 1.0)],
+            )],
+            registry=None,
+            generate_mapping=lambda _: "```json\n{}\n```",
+        )
+
+        self.assertEqual(reconciled[0]["text"], "Hello.")
+        self.assertEqual(reconciled[0]["speaker_id"], "Speaker 1")
+        self.assertEqual(registry["last_chunk_index"], 0)
 
     def test_rejects_out_of_order_chunk(self):
         _, registry = self.prepare_first_chunk()

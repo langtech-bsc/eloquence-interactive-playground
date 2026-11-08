@@ -134,29 +134,44 @@ class SpeakerReconciler:
         original_local_speakers = self._local_speakers(turns)
 
         if original_local_speakers:
-            response = self._request_mapping(
-                working_registry,
-                turns,
-                generate_mapping,
-            )
-            corrected_turns = self._apply_semantic_splits(turns, response.splits)
-            local_speakers = self._local_speakers(corrected_turns)
-            resolved, proposed_names = self._resolve_mapping(
-                working_registry,
-                local_speakers,
-                response,
-            )
+            registry_before_reconciliation = deepcopy(working_registry)
+            try:
+                response = self._request_mapping(
+                    working_registry,
+                    turns,
+                    generate_mapping,
+                )
+                corrected_turns = self._apply_semantic_splits(turns, response.splits)
+                local_speakers = self._local_speakers(corrected_turns)
+                resolved, proposed_names = self._resolve_mapping(
+                    working_registry,
+                    local_speakers,
+                    response,
+                )
+                reconciled_turns = self._rewrite_turns(
+                    corrected_turns,
+                    resolved,
+                    proposed_names,
+                    working_registry,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Speaker reconciliation failed; preserving the original turns: %s",
+                    exc,
+                )
+                working_registry = registry_before_reconciliation
+                resolved = {
+                    speaker: self._allocate_speaker(working_registry)
+                    for speaker in original_local_speakers
+                }
+                reconciled_turns = self._rewrite_turns(
+                    turns,
+                    resolved,
+                    {},
+                    working_registry,
+                )
         else:
-            corrected_turns = deepcopy(turns)
-            resolved = {}
-            proposed_names = {}
-
-        reconciled_turns = self._rewrite_turns(
-            corrected_turns,
-            resolved,
-            proposed_names,
-            working_registry,
-        )
+            reconciled_turns = deepcopy(turns)
         self._update_registry(working_registry, chunk_index, reconciled_turns)
         return reconciled_turns, working_registry
 
@@ -274,6 +289,8 @@ class SpeakerReconciler:
             "otherwise create a label such as 'Corrected 1'. Then map every local label "
             "present after those splits to a conversation-level canonical speaker using "
             "dialogue context, self-identifications, direct address, and reply sequence. "
+            "Multiple local labels may map to the same canonical speaker when diarization "
+            "has split one person into several labels. "
             "canonical_speaker may only be an exact ID key listed in canonical_speakers, "
             "such as 'Speaker 1'; it must never contain a person's name or a chunk-local "
             "label. If canonical_speakers is empty, every canonical_speaker must be null. "
@@ -438,7 +455,6 @@ class SpeakerReconciler:
 
         resolved = {}
         proposed_names = {}
-        reused_speakers = set()
         for local_speaker in local_speakers:
             mapping = by_local[local_speaker]
             canonical = mapping.canonical_speaker
@@ -450,12 +466,7 @@ class SpeakerReconciler:
                     )
 
             if canonical is not None and mapping.confidence >= SPEAKER_MATCH_CONFIDENCE:
-                if canonical in reused_speakers:
-                    raise ValueError(
-                        f"Multiple local speakers mapped to canonical speaker '{canonical}'."
-                    )
                 speaker_id = canonical
-                reused_speakers.add(canonical)
             else:
                 speaker_id = self._allocate_speaker(registry)
 
