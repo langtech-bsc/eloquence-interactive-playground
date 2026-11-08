@@ -1,6 +1,7 @@
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -16,6 +17,8 @@ SPEAKER_NAME_CONFIDENCE = 0.90
 SEMANTIC_SPLIT_CONFIDENCE = 0.90
 MAX_RECENT_EXAMPLES = 3
 MAX_RECENT_TURNS = 6
+
+logger = logging.getLogger(__name__)
 
 
 class SpeakerMapping(BaseModel):
@@ -264,7 +267,9 @@ class SpeakerReconciler:
             "or incompatible self-identifications. Do not split quotations, ordinary "
             "multi-sentence speech, topic changes, or ambiguous cases. Emit a split only "
             "when confidence is at least 0.90, and use splits: [] when no such correction "
-            "is needed. Each split names the speaker that begins "
+            "is needed. after_segment_index must exactly copy the segment_index of "
+            "the segment before the boundary; do not use its position within the turn. "
+            "Each split names the speaker that begins "
             "after the boundary; reuse an existing chunk-local label when appropriate, "
             "otherwise create a label such as 'Corrected 1'. Then map every local label "
             "present after those splits to a conversation-level canonical speaker using "
@@ -348,10 +353,12 @@ class SpeakerReconciler:
             for split in turn_splits:
                 position = segment_positions.get(split.after_segment_index)
                 if position is None or position >= len(segments) - 1:
-                    raise ValueError(
-                        f"Invalid semantic split boundary in turn {turn_index}: "
-                        f"{split.after_segment_index}."
+                    logger.warning(
+                        "Ignoring invalid semantic split boundary in turn %s: %s.",
+                        turn_index,
+                        split.after_segment_index,
                     )
+                    continue
                 if position in boundaries:
                     raise ValueError(
                         f"Duplicate semantic split boundary in turn {turn_index}."
@@ -412,6 +419,12 @@ class SpeakerReconciler:
     ) -> Tuple[Dict[str, str], Dict[str, Tuple[str, float]]]:
         by_local = {}
         for mapping in response.mappings:
+            if mapping.local_speaker not in local_speakers:
+                logger.warning(
+                    "Ignoring mapping for unused local speaker '%s'.",
+                    mapping.local_speaker,
+                )
+                continue
             if mapping.local_speaker in by_local:
                 raise ValueError(
                     f"Duplicate mapping for local speaker '{mapping.local_speaker}'."

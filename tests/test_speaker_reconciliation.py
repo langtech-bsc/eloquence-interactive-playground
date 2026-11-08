@@ -142,7 +142,7 @@ class SpeakerReconcilerTests(unittest.TestCase):
                 }),
             )
 
-    def test_rejects_split_outside_preserved_boundary(self):
+    def test_ignores_split_outside_preserved_boundary(self):
         merged = turn(
             "Speaker 0",
             [
@@ -151,23 +151,25 @@ class SpeakerReconcilerTests(unittest.TestCase):
             ],
         )
 
-        with self.assertRaisesRegex(ValueError, "Invalid semantic split boundary"):
-            self.reconciler.prepare(
-                index_name="conversation",
-                chunk_index=0,
-                append=False,
-                turns=[merged],
-                registry=None,
-                generate_mapping=lambda _: json.dumps({
-                    "splits": [{
-                        "turn_index": 0,
-                        "after_segment_index": 99,
-                        "next_speaker": "Corrected 1",
-                        "confidence": 0.99,
-                    }],
-                    "mappings": [mapping("Speaker 0"), mapping("Corrected 1")],
-                }),
-            )
+        reconciled, _ = self.reconciler.prepare(
+            index_name="conversation",
+            chunk_index=0,
+            append=False,
+            turns=[merged],
+            registry=None,
+            generate_mapping=lambda _: json.dumps({
+                "splits": [{
+                    "turn_index": 0,
+                    "after_segment_index": 0,
+                    "next_speaker": "Corrected 1",
+                    "confidence": 0.99,
+                }],
+                "mappings": [mapping("Speaker 0"), mapping("Corrected 1")],
+            }),
+        )
+
+        self.assertEqual(len(reconciled), 1)
+        self.assertEqual(reconciled[0]["text"], "Question? Answer.")
 
     def test_following_chunk_reuses_canonical_speakers(self):
         _, registry = self.prepare_first_chunk()
