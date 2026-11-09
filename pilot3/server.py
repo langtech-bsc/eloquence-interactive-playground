@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from pipeline import RAGPipeline
+from pipeline import RAGPipeline, DEFAULT_RETRIEVER
 
 app = FastAPI(title="RAG Pipeline API")
 pipeline = RAGPipeline(default_llm="salamandra")
@@ -8,7 +8,7 @@ pipeline = RAGPipeline(default_llm="salamandra")
 
 class QueryRequest(BaseModel):
     dialog_history: list[str]
-    retriever_type: str = "finetuned"
+    retriever_type: str = DEFAULT_RETRIEVER
     llm_type: str = "salamandra"
     temperature: float | None = None
     top_p: float | None = None

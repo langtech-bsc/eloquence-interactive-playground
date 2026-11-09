@@ -31,6 +31,18 @@ MINILM_SPECS = {
 MINILM_LAST_TURNS = 5
 MINILM_MAX_TOKENS = 512
 
+# BAAI/bge-m3 fine-tuned with TID on English + Greek doc2dial (Greek machine-translated).
+# Its propositions were encoded by the frozen base model into a separate Chroma DB.
+BGE_M3_MODEL_ID = os.environ.get("BGE_M3_MODEL_ID", "Cutting3dg3/BGE_M3_TID_d_en_el")
+BGE_M3_CHROMA_DB_REPO_ID = os.environ.get("BGE_M3_CHROMA_DB_REPO_ID", "Cutting3dg3/bge-m3-tid-chromadb")
+BGE_M3_COLLECTION_NAME = "propositions_bge_m3"
+# BGE-M3 cosines run higher than LaBSE's: on-topic top-20 results score >= 0.65 and
+# off-topic top hits 0.48-0.64, so keep similarity >= 0.60.
+BGE_M3_MAX_DISTANCE = 0.40
+# As in training: the last 5 turns, joined by a literal " [SEP] ", oldest tokens cut first.
+BGE_M3_LAST_TURNS = 5
+BGE_M3_MAX_TOKENS = 512
+
 _device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -142,3 +154,27 @@ class MiniLMRetriever(Retriever):
         path = snapshot_download(repo_id=db_repo_id, repo_type="dataset")
         client = chromadb.PersistentClient(path=path)
         self.collection = client.get_collection(name=collection_name)
+
+
+class BgeM3Retriever(Retriever):
+    """BGE-M3 fine-tuned with TID (English + Greek) over its base model's Chroma index."""
+
+    def __init__(self, n_results: int = 10, max_distance: float = BGE_M3_MAX_DISTANCE):
+        self.n_results = n_results
+        self.use_finetuned = True
+        self.max_distance = max_distance
+        self.tag = "bge_m3_tid"
+        self.last_turns = BGE_M3_LAST_TURNS
+        self.separator = " [SEP] "
+
+        # Saved by sentence-transformers 6, whose module paths this image can't load:
+        # rebuild its Transformer + CLS-pooling stack. Its Normalize module is left out,
+        # as for MiniLM: the index uses cosine space.
+        transformer = models.Transformer(BGE_M3_MODEL_ID, max_seq_length=BGE_M3_MAX_TOKENS)
+        pooling = models.Pooling(transformer.get_word_embedding_dimension(), pooling_mode="cls")
+        self.model = SentenceTransformer(modules=[transformer, pooling]).to(_device)
+        self.model.tokenizer.truncation_side = "left"
+
+        path = snapshot_download(repo_id=BGE_M3_CHROMA_DB_REPO_ID, repo_type="dataset")
+        client = chromadb.PersistentClient(path=path)
+        self.collection = client.get_collection(name=BGE_M3_COLLECTION_NAME)

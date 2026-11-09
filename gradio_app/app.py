@@ -47,6 +47,7 @@ from gradio_app.app_handlers import (
     update_text_llm_choices,
     update_llm_params_visibility,
     update_rag_params_visibility,
+    update_examples_visibility,
     enforce_pilot3_llm,
     filter_docs,
     lock_ui_for_generation,
@@ -433,7 +434,8 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                     with gr.Column(scale=1, min_width=130, elem_id="summary_button_column"):
                         summarize_btn = gr.Button("Summarize\nconversation", visible=False, elem_id="summarize_btn")
 
-                gr.Examples(examples, input_textbox)
+                with gr.Column() as examples_column:
+                    gr.Examples(examples, input_textbox)
 
             # RAG and settings column
             with gr.Column(scale=1, elem_id="config_panel") as config_column:
@@ -453,9 +455,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
                         index_name = gr.Radio(label="Index name", visible=False)
                         pilot3_retriever = gr.Radio(
                             label="Retriever",
-                            choices=[("Baseline LaBSE", "baseline"), ("Fine-tuned LaBSE (TID)", "finetuned"),
+                            choices=[("Fine-tuned BGE-M3, English + Greek (TID)", "bge_m3_tid"),
+                                     ("Baseline LaBSE", "baseline"), ("Fine-tuned LaBSE (TID)", "finetuned"),
                                      ("Fine-tuned MiniLM-L6, English (TID)", "minilm_l6_tid")],
-                            value="baseline",
+                            value="bge_m3_tid",
                             visible=False,
                             elem_id="pilot3_retriever",
                         )
@@ -617,6 +620,10 @@ with gr.Blocks(theme=gr.themes.Monochrome(), css=settings.CSS, js=settings.JS_CO
         update_rag_params_visibility,
         [task_config],
         [rag_params_accordion],
+    ).then(
+        update_examples_visibility,
+        [task_config],
+        [examples_column],
     )
     audio_qa_mode.change(
         update_llm_choices,

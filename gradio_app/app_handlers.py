@@ -925,3 +925,9 @@ def update_rag_params_visibility(task_config_str: str) -> gr.update:
     task_config = json.loads(task_config_str) if task_config_str else {}
     rag_enabled = task_config.get("name") == "RAG"
     return gr.update(visible=rag_enabled)
+
+def update_examples_visibility(task_config_str: str) -> gr.update:
+    # The example questions are about the Eloquence project, not the Pilot3 knowledge base.
+    task_config = json.loads(task_config_str) if task_config_str else {}
+    is_pilot3 = str(task_config.get("service", "")).startswith("pilot3")
+    return gr.update(visible=not is_pilot3)

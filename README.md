@@ -111,12 +111,16 @@ Wait for:
 ### Retriever and LLM options
 
 Under **Task & Model Selection** the Pilot3 task exposes two independent choices. Both
-combinations are live and can be switched between turns — nothing is reloaded, so the change
-takes effect on the next message.
+can be switched between turns, and the change takes effect on the next message.
 
 **Retriever** (the `Retriever` radio):
 
-- `Baseline LaBSE` → `retriever_type=baseline`, stock `sentence-transformers/LaBSE`. Default.
+- `Fine-tuned BGE-M3, English + Greek (TID)` → `retriever_type=bge_m3_tid`, the
+  `Cutting3dg3/BGE_M3_TID_d_en_el` model (`BAAI/bge-m3` fine-tuned with TID on doc2dial, in
+  English and machine-translated Greek). Default. As in its training, it embeds only the last
+  5 turns, joined by `[SEP]`, up to 512 tokens. It keeps propositions with similarity >= 0.60
+  (distance <= 0.40); BGE-M3 scores run higher than LaBSE's.
+- `Baseline LaBSE` → `retriever_type=baseline`, stock `sentence-transformers/LaBSE`.
 - `Fine-tuned LaBSE (TID)` → `retriever_type=finetuned`, the `Cutting3dg3/LaBSE-TID` model
   fine-tuned on the pilot's data.
 - `Fine-tuned MiniLM-L6, English (TID)` → `retriever_type=minilm_l6_tid`, the
@@ -124,10 +128,13 @@ takes effect on the next message.
   doc2dial; training code in `Pilot_3/mMiniLM`). Not meant for Greek input. As in its
   training, it embeds only the last 5 turns, joined by `[SEP]`, up to 512 tokens.
 
-The two LaBSE retrievers query the same Chroma collection. MiniLM-L6 queries its own index,
-`Cutting3dg3/minilm-tid-chromadb` (the same propositions, encoded by the base MiniLM-L6).
-All are instantiated at server start, so switching costs nothing at query time. The server
-log line tells you which one ran: `[RETRIEVER:baseline]`, `[RETRIEVER:finetuned]` or
+The two LaBSE retrievers query the same Chroma collection. BGE-M3 and MiniLM-L6 each query
+their own index, `Cutting3dg3/bge-m3-tid-chromadb` and `Cutting3dg3/minilm-tid-chromadb` (the
+same propositions, encoded by the respective base model).
+Only BGE-M3 is loaded at server start. The others load the first time they are selected,
+which delays that one reply; after that, switching costs nothing at query time. Loading them
+all at once may not fit in the default 6 GB Colima VM. The server log line tells you which one
+ran: `[RETRIEVER:bge_m3_tid]`, `[RETRIEVER:baseline]`, `[RETRIEVER:finetuned]` or
 `[RETRIEVER:minilm_l6_tid]`.
 Similarity scores are not comparable across embedding models.
 

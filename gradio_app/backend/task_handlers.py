@@ -107,13 +107,13 @@ class Pilot3TaskHandler:
     selections are ignored. `llm_name` is only used to pick the Pilot_3 `llm_type`.
 
     Service string format: "pilot3-<base_url>", e.g. "pilot3-http://127.0.0.1:8000".
-    Optional task-config key `retriever_type` ("baseline" | "finetuned" |
-    "minilm_l6_tid", default "baseline").
+    Optional task-config key `retriever_type` ("bge_m3_tid" | "baseline" | "finetuned" |
+    "minilm_l6_tid", default "bge_m3_tid").
     """
 
     def __init__(self, task_config):
         self.endpoint = task_config["service"].split("pilot3-", 1)[1].rstrip("/")
-        self.retriever_type = task_config.get("retriever_type", "baseline")
+        self.retriever_type = task_config.get("retriever_type", "bge_m3_tid")
 
     @staticmethod
     def _strip_html(text):
